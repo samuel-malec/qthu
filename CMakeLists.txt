@@ -1,14 +1,14 @@
 cmake_minimum_required(VERSION 3.0)
 project(qthu)
 
-add_executable(qthu)
+add_executable(qasm)
 include(cmake/quickjs.cmake)
-target_sources(qthu
+target_sources(qasm
     PRIVATE
     src/qasm.cpp
 )
 
-target_link_libraries(qthu 
+target_link_libraries(qasm 
     PRIVATE 
     quickjs
 )
@@ -21,5 +21,5 @@ target_sources(bcrun
 
 target_link_libraries(bcrun
     PRIVATE
-    quickjs
+    quickjs-libc
 )

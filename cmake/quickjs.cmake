@@ -26,12 +26,29 @@ target_compile_definitions(quickjs PRIVATE
     HAVE_CLOSEFROM
 )
 
-add_executable(qjsc
-    ${quickjs_SOURCE_DIR}/qjsc.c
+target_link_libraries(quickjs PRIVATE m)
+
+add_library(quickjs-libc STATIC
     ${quickjs_SOURCE_DIR}/quickjs-libc.c
 )
 
-target_link_libraries(qjsc PRIVATE quickjs m dl pthread)
+target_include_directories(quickjs-libc PUBLIC
+    ${quickjs_SOURCE_DIR}
+)
+
+target_compile_definitions(quickjs-libc PRIVATE
+    _GNU_SOURCE
+    CONFIG_VERSION=\"2025-09-13\"
+    HAVE_CLOSEFROM
+)
+
+target_link_libraries(quickjs-libc PUBLIC quickjs m dl pthread)
+
+add_executable(qjsc
+    ${quickjs_SOURCE_DIR}/qjsc.c
+)
+
+target_link_libraries(qjsc PRIVATE quickjs-libc)
 
 target_compile_definitions(qjsc PRIVATE
     _GNU_SOURCE
