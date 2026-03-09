@@ -10,101 +10,116 @@
 #include <cstdint>
 #include "opcodes.hpp"
 
-struct Location {
+namespace qthu
+{
+
+struct Location
+{
     int line;
     int col;
 };
 
-struct Token 
+struct Token
 {
-    enum Category { OPCODE, FUNC_NAME, NUMBER, LABEL, LABEL_DEF, DIRECTIVE, COMMENT, END };
+    enum Category
+    {
+        OPCODE,
+        FUNC_NAME,
+        NUMBER,
+        LABEL,
+        LABEL_DEF,
+        DIRECTIVE,
+        COMMENT,
+        END
+    };
+
     Category cat;
     Location loc;
     std::string data;
 };
 
-struct Lexer 
+struct Lexer
 {
     using sv_t = std::string_view;
-    
+
     Location loc{ 1, 1 };
     std::vector< Token > tokens{};
     sv_t data{};
     std::size_t ptr = 0;
 
-    explicit Lexer( sv_t input ) : data( input ) {}
+    explicit Lexer( sv_t input ) : data( input ) { }
 
-    std::vector< Token > lex() 
+    std::vector< Token > lex()
     {
         tokens.clear();
-        while ( !is_end() )
+        while( !is_end() )
             get_next();
-        
+
         add_token( Token::END, ptr, ptr );
         return tokens;
     }
 
     void get_next()
     {
-        if ( is_end() )
+        if( is_end() )
             return;
 
         char c = peek();
-        if ( std::isspace( static_cast<unsigned char>( c ) ) )
+        if( std::isspace( static_cast< unsigned char >( c ) ) )
         {
             advance();
             return;
         }
 
-        if ( c == ';' )
+        if( c == ';' )
         {
             std::size_t start = ptr;
-            while ( !is_end() && peek() != '\n' )
+            while( !is_end() && peek() != '\n' )
                 advance();
             add_token( Token::COMMENT, start, ptr );
             return;
         }
 
         std::size_t start = ptr;
-        while ( !is_end() )
+        while( !is_end() )
         {
             char p = peek();
-            if ( std::isspace( static_cast< unsigned char >( p ) ) || p == ';' )
+            if( std::isspace( static_cast< unsigned char >( p ) ) || p == ';' )
                 break;
             advance();
         }
 
         sv_t word = data.substr( start, ptr - start );
-        if ( word.empty() )
+        if( word.empty() )
             return;
 
-        if ( word.back() == ':' )
+        if( word.back() == ':' )
         {
             add_token( Token::LABEL_DEF, start, ptr - 1 );
             return;
         }
 
-        if ( c == '.' )
+        if( c == '.' )
         {
             add_token( Token::DIRECTIVE, start, ptr );
             return;
         }
 
-        if ( is_number( word ) )
+        if( is_number( word ) )
         {
             add_token( Token::NUMBER, start, ptr );
             return;
         }
 
-        if ( should_be_label() )
+        if( should_be_label() )
             add_token( Token::LABEL, start, ptr );
-        else if ( get_opcode_set().count( std::string( word ) ) )
+        else if( get_opcode_set().count( std::string( word ) ) )
             add_token( Token::OPCODE, start, ptr );
         else
             add_token( Token::FUNC_NAME, start, ptr );
     }
 
-    char peek() const 
+    char peek() const
     {
         assert( ptr < data.size() );
         return data[ ptr ];
@@ -117,7 +132,7 @@ struct Lexer
 
     void advance()
     {
-        if ( !is_end() )
+        if( !is_end() )
             ptr++;
     }
 
@@ -129,20 +144,20 @@ struct Lexer
 
     bool is_number( sv_t s ) const
     {
-        if ( s.empty() )
+        if( s.empty() )
             return false;
 
         std::size_t i = 0;
-        if ( s[ 0 ] == '-' )
+        if( s[ 0 ] == '-' )
         {
-            if ( s.size() == 1 )
+            if( s.size() == 1 )
                 return false;
             i = 1;
         }
 
-        for ( ; i < s.size(); i++ )
+        for( ; i < s.size(); i++ )
         {
-            if ( !std::isdigit( static_cast<unsigned char>( s[ i ] ) ) )
+            if( !std::isdigit( static_cast< unsigned char >( s[ i ] ) ) )
                 return false;
         }
         return true;
@@ -150,24 +165,23 @@ struct Lexer
 
     bool should_be_label() const
     {
-        if ( tokens.empty() )
+        if( tokens.empty() )
             return false;
 
         const Token& prev = tokens.back();
-        if ( prev.cat != Token::OPCODE )
+        if( prev.cat != Token::OPCODE )
             return false;
 
-        return prev.data == "if_false" || prev.data == "if_true" ||
-               prev.data == "goto" || prev.data == "goto8" ||
-               prev.data == "goto16" || prev.data == "if_false8" ||
+        return prev.data == "if_false" || prev.data == "if_true" || prev.data == "goto" ||
+               prev.data == "goto8" || prev.data == "goto16" || prev.data == "if_false8" ||
                prev.data == "if_true8";
     }
 
     void drop()
     {
-        for ( std::size_t i = 0; i < ptr && i < data.size(); i++ )
+        for( std::size_t i = 0; i < ptr && i < data.size(); i++ )
         {
-            if ( data[ i ] == '\n' )
+            if( data[ i ] == '\n' )
             {
                 loc.line++;
                 loc.col = 1;
@@ -177,8 +191,10 @@ struct Lexer
                 loc.col++;
             }
         }
-        
+
         data.remove_prefix( ptr );
         ptr = 0;
     }
 };
+
+} // namespace qthu

@@ -2,6 +2,9 @@
 
 #include <string>
 
+namespace qthu
+{
+
 struct BcBuilder
 {
     void emit_opcode();
@@ -11,6 +14,6 @@ struct BcBuilder
     void create_function();
 
     void create_label();
-
-    
 };
+
+} // namespace qthu
