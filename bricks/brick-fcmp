@@ -1,0 +1,243 @@
+#pragma once
+#include <brick-assert>
+#include <brick-string>
+#include <brick-enumerate>
+#include <brick-except>
+#include <typeindex>
+#include <sys/time.h>
+
+namespace brq
+{
+    template< typename out_t, typename... state_t >
+    struct program
+    {
+        using op_t = std::function< out_t( state_t & ... ) >;
+        using outs_t = std::vector< out_t >;
+
+        std::vector< op_t > ops;
+        brq::string_builder str;
+
+        friend brq::string_builder &operator<<( brq::string_builder &b, const program &p )
+        {
+            return b << p.str;
+        }
+
+        auto eval( state_t... state )
+        {
+            using outs_t = std::vector< out_t >;
+            outs_t outs;
+
+            for ( auto &f : ops )
+                outs.push_back( f( state... ) );
+
+            return std::tuple< outs_t, state_t... >{ outs, state... };
+        }
+
+        void add( const op_t &op, std::string_view name )
+        {
+            ops.push_back( op );
+            str << "\n" << name;
+        }
+    };
+
+    template< typename out_t, typename... state_t >
+    auto enum_program( brq::nat index,
+                       std::vector< std::string_view > names,
+                       auto... avail )
+    {
+        using op_t = std::function< out_t( state_t & ... ) >;
+        using ops_t = std::vector< op_t >;
+
+        ops_t avail_vec{ avail... };
+        program< out_t, state_t ... > p;
+
+        for ( auto i : brq::enumerate::list( index, avail_vec.size() ) )
+            p.add( avail_vec[ i.short_digit() ], names[ i.short_digit() ] );
+
+        return p;
+    }
+
+    template< typename out_t, typename... state_t >
+    auto enum_program( brq::nat index, auto... avail )
+    {
+        using op_t = std::function< out_t( state_t & ... ) >;
+        using ops_t = std::vector< op_t >;
+
+        std::vector< std::string_view > names{ std::get< 0 >( avail )... };
+        ops_t avail_vec{ std::get< 1 >( avail )... };
+        program< out_t, state_t ... > p;
+
+        for ( auto i : brq::enumerate::list( index, avail_vec.size() ) )
+            p.add( avail_vec[ i.short_digit() ], names[ i.short_digit() ] );
+
+        return p;
+    }
+
+    inline std::type_index except_type( std::exception_ptr eptr )
+    {
+        try
+        {
+            if ( eptr )
+                std::rethrow_exception( eptr );
+        }
+        catch ( const std::exception &e )
+        {
+            return typeid( e );
+        }
+
+        return typeid( nullptr );
+    }
+
+    inline bool except_type_eq( std::exception_ptr a_ptr, std::exception_ptr b_ptr )
+    {
+        if ( !a_ptr && !b_ptr )
+            return true;
+        if ( !a_ptr || !b_ptr )
+            return false;
+
+        return except_type( a_ptr ) == except_type( b_ptr );
+    }
+
+    struct fcmp_base
+    {
+        virtual bool is_match() const = 0;
+        explicit operator bool() const { return is_match(); }
+    };
+
+    template< typename retval_t, typename... args_t >
+    struct fcmp_call_result
+    {
+        std::tuple< args_t... > args;
+        std::exception_ptr except;
+        retval_t retval{};
+        int64_t nsec;
+    };
+
+    inline constexpr int timeout_factor = 50;
+
+    template< typename retval_t, typename... args_t >
+    struct fcmp_result : fcmp_base
+    {
+        std::tuple< args_t... > input;
+        fcmp_call_result< retval_t, args_t... > f, g;
+
+        bool is_match() const override
+        {
+            return except_type( f.except ) == typeid( precondition_failed ) ||
+            (
+                g.args == f.args &&
+                g.retval == f.retval &&
+                g.nsec < timeout_factor * f.nsec &&
+                except_type_eq( g.except, f.except )
+            );
+        }
+
+
+        friend brq::string_builder &operator<<( brq::string_builder &b, const fcmp_result &r )
+        {
+            b << "\n";
+            b << "input arguments: " << printable( r.input ) << "\n";
+
+            if ( r.f.args != r.g.args )
+            {
+                b << "output arguments:\n"
+                  << "  expected: " << printable( r.f.args ) << "\n"
+                  << "  actual:   " << printable( r.g.args ) << "\n";
+            }
+
+            if ( r.f.retval != r.g.retval )
+            {
+                b << "return value:\n"
+                  << "  expected: " << printable( r.f.retval ) << "\n"
+                  << "  actual:   " << printable( r.g.retval ) << "\n";
+            }
+
+            if ( r.f.nsec * timeout_factor <= r.g.nsec )
+            {
+                b << "running time:\n"
+                  << "  expected: <" << r.f.nsec / 1000000.0 * timeout_factor << "ms\n"
+                  << "  actual:    " << r.g.nsec / 1000000.0 << "ms\n";
+            }
+
+            auto f_eid = except_type( r.f.except );
+            auto g_eid = except_type( r.g.except );
+
+            if ( f_eid != g_eid )
+            {
+                b << "exception type:\n"
+                  << "  expected: " << f_eid.name() << "\n"
+                  << "  actual: " << g_eid.name() << "\n";
+            }
+
+            return b;
+        }
+    };
+
+    inline void fcmp_itimer( int64_t usec )
+    {
+        struct ::itimerval stop{};
+        stop.it_value.tv_usec = usec;
+        setitimer( ITIMER_VIRTUAL, &stop, nullptr );
+    }
+
+    inline int64_t fcmp_clock()
+    {
+        struct ::timespec now;
+
+        if ( clock_gettime( CLOCK_MONOTONIC, &now ) )
+            perror( "clock_gettime" ), std::exit( 1 );
+
+        return int64_t( now.tv_sec ) * 1'000'000'000 + now.tv_nsec;
+    }
+
+    auto fcmp_call( auto fun, auto &arg, auto &rv, auto &eptr, auto &nsec )
+    {
+        int64_t start = fcmp_clock();
+
+        try
+        {
+            rv = std::apply( fun, arg );
+        }
+        catch ( ... )
+        {
+            eptr = std::current_exception();
+        }
+
+        nsec = std::max( fcmp_clock() - start, int64_t( 1000 ) );
+    }
+
+    auto fcmp( auto f, auto g, auto... args )
+    {
+        fcmp_result< decltype( g( args... ) ), decltype( args )... > r;
+        r.f.args = r.input = std::tuple{ args... };
+
+        brq::printable input_args( r.input );
+        TRACE( input_args );
+
+        fcmp_call( f, r.f.args, r.f.retval, r.f.except, r.f.nsec );
+
+        if ( except_type( r.f.except ) == typeid( precondition_failed ) )
+        {
+            TRACE( "precondition failed" );
+            return r;
+        }
+
+        int retry = 3;
+        do
+        {
+            r.g.args = std::tuple{ args... };
+            fcmp_call( g, r.g.args, r.g.retval, r.g.except, r.g.nsec );
+        }
+        while ( retry-- && r.g.nsec > timeout_factor * r.f.nsec );
+
+        return r;
+    }
+
+    void fcmp_assert( auto f, auto g, auto && ... args )
+    {
+        auto match = fcmp( f, g, std::forward< decltype( args ) >( args )... );
+        brq::trace_clear();
+        ASSERT( match );
+        brq::trace_clear();
+    }
+}

@@ -1,0 +1,313 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * (c) 2019 Petr Ročkai <code@fixp.eu>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+
+#include "brick-assert"
+#include "brick-salloc"
+#include <atomic>
+#include <functional>
+
+namespace brq
+{
+    template< typename T >
+    struct unique_ptr
+    {
+        T *ptr;
+        bool placed = false;
+
+        unique_ptr( T *raw = nullptr, bool placed = false ) : ptr( raw ), placed( placed ) {}
+        unique_ptr( const unique_ptr & ) = delete;
+        unique_ptr( unique_ptr &&o ) : ptr( o.ptr ), placed( o.placed )
+        {
+            o.ptr = nullptr;
+        }
+
+        unique_ptr &operator=( const unique_ptr & ) = delete;
+        unique_ptr &operator=( unique_ptr &&o )
+        {
+            destroy();
+            ptr = o.ptr;
+            placed = o.placed;
+            o.ptr = nullptr;
+            return *this;
+        }
+
+        auto operator->() const { return ptr; }
+        decltype( auto ) operator*() const { return *ptr; }
+        explicit operator bool() const { return ptr; }
+
+        void destroy()
+        {
+            if ( !ptr )
+                return;
+
+            if ( placed )
+                ptr->~T();
+            else
+                delete ptr;
+
+            ptr = nullptr;
+        }
+
+        ~unique_ptr() noexcept( noexcept( ptr->~T() ) )
+        {
+            destroy();
+        }
+    };
+
+    using opaque_ptr = unique_ptr< vbase >;
+
+    template< typename T, bool atomic = false,
+              typename static_allocator = std_new< T >,
+              auto ref_get = unit,
+              auto ref_put = unit >
+    struct refcount_ptr
+    {
+        template< bool as_atomic >
+        using self_t = refcount_ptr< T, as_atomic, static_allocator >;
+
+        using rawptr_t = typename static_allocator::pointer;
+
+        template< typename target_t, bool as_atomic = atomic, auto rg = ref_get, auto rp = ref_put >
+        using rebind_t = refcount_ptr< target_t, as_atomic,
+                                       typename static_allocator::template rebind< target_t >,
+                                       rg, rp >;
+
+        refcount_ptr() noexcept : _ptr( rawptr_t() ) {}
+        refcount_ptr( const refcount_ptr &o ) noexcept : refcount_ptr( o._ptr ) {}
+        explicit refcount_ptr( rawptr_t v ) noexcept : _ptr( v ) { _get( v ); }
+        refcount_ptr( std::nullptr_t ) : refcount_ptr() {}
+
+        template< typename D, bool from_atomic, auto rg, auto rp,
+                  typename = std::enable_if_t< std::is_convertible_v< D *, T * > > >
+        refcount_ptr( const rebind_t< D, from_atomic, rg, rp > &o ) noexcept
+            : refcount_ptr( o._ptr )
+        {}
+
+        template< typename target_t >
+        rebind_t< target_t > dyn_cast()
+        {
+            return rebind_t< target_t >( dynamic_cast< target_t * >( ptr() ) );
+        }
+
+        ~refcount_ptr() noexcept { _put( ptr() ); }
+        rawptr_t operator->() const noexcept { return _ptr; }
+        T &operator*() const noexcept { return *ptr(); }
+
+        explicit operator bool() const noexcept { return bool( ptr() ); }
+        bool operator !() const noexcept { return !ptr(); }
+
+        bool operator==( const refcount_ptr &o ) const noexcept
+        {
+            return !( *this < o ) && !( o < *this );
+        }
+
+        bool operator!=( const refcount_ptr &o ) const noexcept
+        {
+            return *this < o || o < *this;
+        }
+
+        bool operator<( const refcount_ptr &o ) const noexcept
+        {
+            return std::less< const void * >()( ptr(), o.ptr() );
+        }
+
+        template< bool o_atomic >
+        refcount_ptr &operator=( const self_t< o_atomic> &o ) noexcept
+        {
+            auto old = ptr( o.ptr() );
+            _get( ptr() );
+            _put( old );
+            return *this;
+        }
+
+        refcount_ptr &operator=( const refcount_ptr &o ) noexcept
+        {
+            return operator=< atomic >( o );
+        }
+
+        rawptr_t ptr() const noexcept
+        {
+            if constexpr ( atomic )
+            {
+                auto val = uint64_t( _ptr.load() ); /* FIXME */
+                return rawptr_t( val & ~uint64_t( 1 ) );
+            }
+            else
+                return _ptr;
+        }
+
+        rawptr_t ptr( rawptr_t p ) const noexcept
+        {
+            if constexpr ( atomic )
+                return _ptr.exchange( p );
+            else
+            {
+                auto old = _ptr;
+                _ptr = p;
+                return old;
+            }
+        }
+
+        void _get( rawptr_t p ) const noexcept
+        {
+            if ( !p )
+                return;
+
+            if constexpr ( std::is_same_v< std::remove_cv_t< decltype( ref_get ) >, unit_t > )
+                p->ref_get();
+            else
+                ref_get( p );
+        }
+
+        void _put( rawptr_t p ) const noexcept
+        {
+            bool rv;
+
+            if ( !p )
+                return;
+
+            if constexpr ( std::is_same_v< std::remove_cv_t< decltype( ref_put ) >, unit_t > )
+                rv = p->ref_put();
+            else
+                rv = ref_put( p );
+
+            if ( !rv )
+                static_allocator::destroy( p );
+        }
+
+        void reset( rawptr_t p = rawptr_t() ) noexcept
+        {
+            _get( p );
+            auto old = ptr( p );
+            _put( old );
+        }
+
+        bool compare_exchange_strong( self_t< false > &p, self_t< false > n )
+        {
+            if constexpr ( atomic )
+            {
+                TRACE( "cmpxchg", ptr(), p.ptr(), n.ptr() );
+                std::atomic< uintptr_t > &self = *reinterpret_cast< std::atomic< uintptr_t > * >( &_ptr );
+                uintptr_t expect = self.load() & ~uintptr_t( 1 );
+                uintptr_t want = expect | 1;
+
+                while ( !self.compare_exchange_weak( expect, want ) )
+                    want = expect | 1, expect = expect & ~uintptr_t( 1 );
+
+                uintptr_t self_val = want & ~uintptr_t( 1 );
+                rawptr_t self_ptr = rawptr_t( self_val );
+
+                if ( p.ptr() == self_ptr ) /* success, update this */
+                {
+                    n._get( ptr() );
+                    p._put( p.ptr() );
+                    _ptr.store( n.ptr() );
+                    TRACE( "cmpxchg", n.ptr(), " success" );
+                    return true;
+                }
+                else /* failed, update p */
+                {
+                    _get( self_ptr );
+                    auto old = p.ptr( self_ptr );
+                    p._put( old );
+                    _ptr.store( self_ptr ); /* unlock */
+                    TRACE( "cmpxchg", n.ptr(), "failure, reverted to",
+                           self_ptr, " and set p to", p.ptr() );
+                    return false;
+                }
+            }
+            else
+            {
+                if ( _ptr == p._ptr )
+                {
+                    *this = n;
+                    return true;
+                }
+                else
+                {
+                    p = *this;
+                    return false;
+                }
+            }
+        }
+
+        template< typename stream >
+        friend auto operator<<( stream &o, const refcount_ptr &p )
+            -> decltype( o << std::declval< void * >() )
+        {
+            return o << p.ptr();
+        }
+
+        mutable std::conditional_t< atomic, std::atomic< rawptr_t >, rawptr_t > _ptr;
+    };
+
+    template< typename T = uint16_t, bool atomic = false >
+    struct refcount_base
+    {
+        static constexpr const T max = std::numeric_limits< T >::max();
+
+        void ref_get()
+        {
+            if ( _refcount < max )
+                ++ _refcount;
+        }
+
+        bool ref_put()
+        {
+            ASSERT_QUIET;
+            ASSERT_LEQ( 1, _refcount );
+            return _refcount < max && --_refcount;
+        }
+
+        refcount_base() = default;
+        refcount_base( const refcount_base & ) : _refcount( 0 ) {}
+        refcount_base( refcount_base && ) : _refcount( 0 ) {}
+        refcount_base &operator=( refcount_base ) { return *this; }
+
+        std::conditional_t< atomic, std::atomic< T >, T > _refcount = 0;
+    };
+
+    template< typename T = uint16_t, bool atomic = false >
+    struct refcount_vbase : refcount_base< T, atomic >
+    {
+        virtual void ref_get() { return refcount_base< T, atomic >::ref_get(); }
+        virtual bool ref_put() { return refcount_base< T, atomic >::ref_put(); }
+        virtual ~refcount_vbase() = default;
+    };
+
+    template< typename type, bool atomic = false,
+              typename static_alloc = std_new< type >,
+              typename... alloc_args_t, typename... args_t >
+    auto make_refcount_opt( std::tuple< alloc_args_t... > alloc_args, args_t && ... args )
+    {
+        using ptr = refcount_ptr< type, atomic, static_alloc >;
+        return ptr( static_alloc::construct_with( alloc_args, std::forward< args_t >( args )... ) );
+    }
+
+    template< typename type, bool atomic = false,
+              typename static_alloc = std_new< type >, typename... args_t >
+    auto make_refcount( args_t && ... args )
+    {
+        return make_refcount_opt< type, atomic, static_alloc >( std::tuple{},
+                                                                std::forward< args_t >( args )... );
+    }
+}
+
+// vim: syntax=cpp tabstop=4 shiftwidth=4 expandtab

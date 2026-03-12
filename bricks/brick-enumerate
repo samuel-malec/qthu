@@ -1,0 +1,651 @@
+#pragma once
+#include "brick-nat"
+#include <vector>
+#include <numeric>
+
+namespace brq::enumerate
+{
+    BRICK_OPTIONAL_ASSERTIONS( enumerate );
+
+    struct unbounded
+    {
+        int operator[]( std::size_t ) const { return 0; }
+    };
+
+    template< typename >
+    struct is_unbounded : std::false_type {};
+
+    template<>
+    struct is_unbounded< unbounded > : std::true_type {};
+
+    template< typename type >
+    constexpr bool is_unbounded_v = is_unbounded< std::remove_cvref_t< type > >::value;
+
+    auto find_block_gen( nat index, auto block, auto size, auto update_block )
+    {
+        while ( true )
+        {
+            auto skip = std::apply( size, block );
+
+            if ( skip <= index )
+                index -= skip;
+            else
+                return std::tuple_cat( std::tuple{ index }, block );
+
+            std::apply( update_block, block );
+        }
+    }
+
+    auto find_block( nat index, auto block, auto size )
+    {
+        return find_block_gen( index, std::tuple{ block }, size, []( auto &b ) { ++ b; } );
+    }
+
+    inline nat nat_enum( nat index ) { return index; }
+
+    inline int integer( nat index )
+    {
+        return index % 2 == 0 ? index.short_digit() / 2 : -index.short_digit() / 2;
+    }
+
+    template< typename type_t >
+    const type_t &min_nonzero( const type_t &a, const type_t &b )
+    {
+        return a && a < b ? a : b;
+    }
+
+    template< std::size_t n, typename bound_t, typename item_bound_t >
+    nat tuple_block_size( bound_t b, std::size_t d, const std::array< item_bound_t, n > &bounds )
+    {
+        nat total = 1;
+
+        for ( std::size_t i = 0; i < n; ++i )
+        {
+            if ( i == d && bounds[ i ] && bounds[ i ] <= b )
+                return 0;
+
+            bound_t choices = i == d ? bound_t( 1 ) : i < d ? b + 1 : b;
+            total *= min_nonzero( bound_t( bounds[ i ] ), choices );
+        }
+
+        return total;
+    }
+
+    template< typename bounds_t >
+    nat tuple_block_size( nat b, int n, int d, const bounds_t &bounds = bounds_t() )
+    {
+        if ( n == 0 && b == 0 )
+            return 1;
+
+        if constexpr ( is_unbounded_v< bounds_t > )
+            return ( b + 1 ).pow( d ) * b.pow( n - d - 1 );
+        else
+            return tuple_block_size( b, d, bounds );
+    }
+
+    template< std::size_t n, typename bound_t, typename item_bound_t >
+    nat tuple_count( bound_t b, const std::array< item_bound_t, n > &bounds )
+    {
+        nat add = 1, sub = 1;
+
+        for ( std::size_t i = 0; i < n; ++i )
+        {
+            bound_t b_i = bounds[ i ];
+            add *= min_nonzero( b_i, b + 1 );
+            sub *= min_nonzero( b_i, b );
+        }
+
+        return add - sub;
+    }
+
+    template< typename bounds_t = unbounded >
+    nat tuple_count( nat b, int n, const bounds_t &bounds = bounds_t() )
+    {
+        if ( b == 0 )
+            return 1;
+
+        if constexpr ( is_unbounded_v< decltype( bounds ) > )
+            return ( b + 1 ).pow( n ) - b.pow( n );
+        else
+            return tuple_count( b, bounds );
+    }
+
+
+    template< int i = 0, typename bounds_t >
+    nat tuple_bound( const bounds_t &bounds )
+    {
+        if constexpr ( is_unbounded_v< bounds_t > )
+            return 0;
+        else if constexpr ( i == std::tuple_size_v< bounds_t > )
+            return 1;
+        else
+            return std::get< i >( bounds ) * tuple_bound< i + 1 >( bounds );
+    }
+
+    inline auto tuple_item( nat b, nat index, int i, int d, nat item_bound = 0 )
+    {
+        if ( i == d )
+            return std::pair{ index, b };
+        else
+        {
+            auto choices = min_nonzero( item_bound, i < d ? b + 1 : b );
+            return divmod( index, choices );
+        }
+    }
+
+    template< typename bounds_t = unbounded >
+    auto tuple_block( nat b, int n, nat index, const bounds_t &bounds = bounds_t() )
+    {
+        return find_block( index, 0, [&]( auto d ) { return tuple_block_size( b, n, d, bounds ); } );
+    }
+
+    template< int n, typename bounds_t = unbounded >
+    auto tuple_param( nat b, nat index, const bounds_t &bounds = bounds_t(), int d = 0 )
+    {
+        std::array< nat, n > r;
+        std::tie( index, d ) = tuple_block( b, n, index, bounds );
+
+        std::array< int, n > indices;
+        std::iota( indices.begin(), indices.end(), 0 );
+        std::stable_sort( indices.begin(), indices.end(),
+                          [&]( int i, int j ) { return bounds[ i ] > bounds[ j ]; } );
+
+        for ( auto i : indices )
+            std::tie( index, r[ i ] ) = tuple_item( b, index, i, d, bounds[ i ] );
+
+        return r;
+    }
+
+    template< int n, typename bounds_t = unbounded >
+    auto tuple( nat index, const bounds_t &bounds = bounds_t() )
+    {
+        nat b = 0;
+
+        if constexpr ( is_unbounded_v< decltype( bounds ) > )
+        {
+            b = index.nth_root( n );
+            index -= b.pow( n );
+        }
+        else
+        {
+            auto max_b = *std::max_element( bounds.begin(), bounds.end() );
+
+            if ( max_b == 0 )
+                return tuple< n, unbounded >( index );
+
+            ASSERT( tuple_bound( bounds ) == 0 || index < tuple_bound( bounds ) );
+
+            bounds_t b_capped, b_count;
+            int unbounded = 0;
+
+            for ( unsigned i = 0; i < bounds.size(); ++i )
+                if ( auto bi = bounds[ i ] )
+                    b_count[ i ] = b_capped[ i ] = bi;
+                else
+                {
+                    b_capped[ i ] = max_b;
+                    b_count[ i ] = 1;
+                    ++ unbounded;
+                }
+
+            auto offset = tuple_bound( b_capped );
+            auto count  = tuple_bound( b_count );
+
+            if ( index > offset )
+            {
+                b = max_b + 1;
+                index -= offset;
+                auto skip_b = ( index / count ).nth_root( unbounded );
+                ASSERT_LEQ( 0, skip_b );
+                b += skip_b;
+                index -= count * skip_b.pow( unbounded );
+            }
+        }
+
+        auto next_block = [&]( auto b ) { return tuple_count( b, n, bounds ); };
+        std::tie( index, b ) = find_block( index, b, next_block );
+        return tuple_param< n >( b, index, bounds );
+    }
+
+    inline nat list_count( nat n )
+    {
+        return n <= 1 ? n + 1 : ( n.pow( n + 1 ) - 1 ) / ( n - 1 ); /* ∑₀ᵏnᵏ */
+    };
+
+    inline auto list_param( nat b, int n, nat index, int d = 0 )
+    {
+        std::vector< nat > r( n );
+        std::tie( index, d ) = tuple_block( b, n, index );
+
+        for ( int i = n - 1; i >= 0; --i )
+            std::tie( index, r[ i ] ) = tuple_item( b, index, i, d );
+
+        return r;
+    }
+
+    inline auto list( nat index, nat item_bound = 0, nat length_bound = 0 )
+    {
+        nat b_idx, b_skip;
+        int d = 0;
+
+        if ( !length_bound ) /* TODO */
+        {
+            while ( index > list_count( b_skip + 1 ) && ( !item_bound || b_skip < item_bound ) )
+                ++ b_skip;
+
+            if ( b_skip >= 1 )
+            {
+                index -= list_count( b_skip ) + 1;
+                b_idx = 2 + b_skip * ( b_skip + 1 );
+            }
+        }
+        else
+            length_bound += 1; /* bound = max_size + 1 */
+
+        auto block_size = [&]( nat b_idx )
+        {
+            auto [ n, b ] = tuple< 2 >( b_idx, std::array{ length_bound, item_bound } );
+            return tuple_count( b, n.short_digit() );
+        };
+
+        std::tie( index, b_idx ) = find_block( index, b_idx, block_size );
+        auto [ n, b ] = tuple< 2 >( b_idx, std::array{ length_bound, item_bound } );
+        std::tie( index, d ) = tuple_block( b, n.short_digit(), index );
+        std::vector< nat > r( n.short_digit() );
+
+        for ( int i = 0; i < n; ++i )
+            std::tie( index, r[ i ] ) = tuple_item( b, index, i, d );
+
+        return r;
+    }
+
+    inline auto set_param( nat b, nat n, nat index )
+    {
+        std::vector< nat > r;
+
+        nat u = b;
+        nat v = n;
+        ASSERT_LT( index, comb( b, n ) );
+
+        nat x = comb( b, n ) - index - 1;
+
+        for ( nat i = 0; i < n; ++i )
+        {
+            do
+                u -= 1;
+            while ( comb( u, v ) > x );
+            r.push_back( b - 1 - u );
+            x -= comb( u, v );
+            v -= 1;
+        }
+
+        return r;
+    }
+
+    inline auto set( nat index )
+    {
+        std::vector< nat > r;
+
+        if ( index == 0 )
+            return r;
+
+        nat b = 0;
+        for ( ; nat( 2 ).pow( b + 1 ) <= index; ++b );
+        ASSERT_LEQ( nat( 2 ).pow( b ), index );
+        index -= nat( 2 ).pow( b );
+        auto [ i_block, n ] = find_block( index, 0, [&]( auto n ) { return comb( b, n ); } );
+
+        r = set_param( b, n, i_block );
+        r.push_back( b );
+
+        return r;
+    }
+
+    inline nat map_count( nat b, int n )
+    {
+        return comb( b, n ) * tuple_count( b, n );
+    }
+
+    inline auto map( nat index )
+    {
+        auto update_count = []( auto &b, auto &n ) { if ( b == n ) n = 1, ++ b; else ++ n; };
+        int b, n;
+        std::tie( index, b, n ) =
+            find_block_gen( index, std::tuple( 1, 1 ), map_count, update_count );
+
+        std::vector< std::tuple< nat, nat > > r( n );
+
+        if ( n == 0 )
+            return r;
+
+        auto [ i, j ] = divmod( index, tuple_count( b, n ) );
+        auto keys   = set_param( b, std::min( n, b ), i );
+        auto values = list_param( b, n, j );
+
+        auto k_it = keys.begin();
+        auto v_it = values.begin();
+
+        for ( int i = 0; k_it != keys.end(); ++k_it, ++v_it, ++i )
+            r[ i ] = std::tuple( *k_it,  *v_it );
+
+        return r;
+    }
+
+    inline auto permutation_param( int n, nat index )
+    {
+        std::vector< nat > result( n );
+        std::iota( result.begin(), result.end(), 0 );
+
+        while ( n > 0 )
+        {
+            brq::nat swap_idx;
+            std::tie( index, swap_idx ) = divmod( index, n );
+            n --;
+            std::swap( result[ n ], result[ int( swap_idx ) ] );
+        }
+
+        return result;
+    }
+
+    inline auto permutation( nat index )
+    {
+        int n = 0;
+        nat count = 1;
+
+        while ( index >= count )
+        {
+            index -= count;
+            n ++;
+            count *= n;
+        }
+
+        return permutation_param( n, index );
+    }
+
+    inline void tree( nat idx, nat max_arity, std::vector< std::pair< nat, nat > > &map, size_t parent )
+    {
+        for ( auto child : list( idx, 0, max_arity ) )
+        {
+            size_t id = map.size() + 1;
+            map.emplace_back( parent, id );
+            tree( child, max_arity, map, id );
+        }
+    }
+
+    inline auto tree( nat idx, nat arity = 0 )
+    {
+        std::vector< std::pair< nat, nat > > map;
+        tree( idx, arity, map, 0 );
+        return map;
+    }
+
+    template< typename base_t >
+    struct int1_t
+    {
+        base_t val;
+
+        int1_t( base_t v ) : val( v ) {}
+        int1_t( nat n )    : val( n ) {}
+
+        operator base_t() { return val; }
+
+        auto operator<=>( const int1_t &o ) const { return val <=> o.val; }
+        auto operator== ( const int1_t &o ) const { return val == o.val; }
+
+        friend auto &operator<<( string_builder &b, int1_t v )
+        {
+            return b << v.val;
+        }
+    };
+
+    struct nat1 : nat
+    {
+        using nat::nat;
+        nat1( const nat &n ) : nat( n ) {}
+    };
+
+    using uint1  = int1_t< unsigned >;
+    using uchar1 = int1_t< unsigned char >;
+
+    template< typename T, typename = void >
+    struct mk;
+
+    template< typename T >
+    struct mk< T, decltype( T::enumerate( nat() ), void( 0 ) ) >
+    {
+        static auto get( nat index ) { return T::enumerate( index ); }
+    };
+
+    template< typename T >
+    struct mk< T, std::enable_if_t< std::is_signed_v< T > > >
+    {
+        static auto get( nat index )
+        {
+            return index % 2 == 0 ? T( index / 2 + 1 ) : -T( index / 2 );
+        }
+    };
+
+    template< typename T >
+    struct mk< T, std::enable_if_t< std::is_unsigned_v< T > > >
+    {
+        static T get( nat index ) { return index; }
+    };
+
+    template<> struct mk< nat1,   void > { static nat1   get( nat idx ) { return idx + 1; } };
+    template<> struct mk< uint1,  void > { static uint1  get( nat idx ) { return idx + 1; } };
+    template<> struct mk< uchar1, void > { static uchar1 get( nat idx ) { return idx + 1; } };
+
+    template< typename... args_t >
+    struct mk< std::tuple< args_t... > >
+    {
+        template< typename T, std::size_t... type_indices >
+        static auto recurse( std::index_sequence< type_indices... >, T value_indices )
+        {
+            return std::tuple< args_t... >
+            {
+                mk< args_t >::get( std::get< type_indices >( value_indices ) )...
+            };
+        }
+
+        static auto get( nat index )
+        {
+            auto indices = tuple< sizeof...( args_t ) >( index );
+            return recurse( std::index_sequence_for< args_t... >(), indices );
+        }
+    };
+
+    template< typename T >
+    struct mk< T, decltype( typename T::key_type(), typename T::mapped_type(), void( 0 ) ) >
+    {
+        static auto get( nat index )
+        {
+            T result;
+
+            for ( auto [ k, v ] : map( index ) )
+                result.emplace( mk< typename T::key_type >::get( k ),
+                                mk< typename T::mapped_type >::get( v ) );
+
+            return result;
+        }
+    };
+
+    template< typename T >
+    struct mk< T, std::enable_if_t< std::is_same_v< typename T::key_type, typename T::value_type > > >
+    {
+        static auto get( nat index )
+        {
+            T result;
+
+            for ( auto k : set( index ) )
+                result.emplace( mk< typename T::key_type >::get( k ) );
+
+            return result;
+        }
+    };
+
+    template< typename T, std::size_t N >
+    struct mk< std::array< T, N > >
+    {
+        template< std::size_t... type_indices >
+        static auto recurse( std::index_sequence< type_indices... >,
+                             std::array< nat, N > value_indices )
+        {
+            return std::array< T, N >
+            {
+                mk< T >::get( value_indices[ type_indices ] )...
+            };
+        }
+
+        static auto get( nat index )
+        {
+            return recurse( std::make_index_sequence< N >(), tuple< N >( index ) );
+        }
+    };
+
+    template< typename > struct item_bound { static constexpr int value = 0; };
+    template<> struct item_bound< bool > { static constexpr int value = 2; };
+
+    template< typename T > constexpr auto item_bound_v = item_bound< T >::value;
+
+    template< typename T >
+    struct mk< T, decltype( T().push_back( std::declval< typename T::value_type >() ), void( 0 ) ) >
+    {
+        using elem_t = typename T::value_type;
+
+        static auto get( nat index )
+        {
+            T result;
+
+            for ( auto i : list( index, item_bound_v< elem_t > ) )
+                result.push_back( mk< elem_t >::get( i ) );
+
+            return result;
+        }
+    };
+
+    template< template< typename... > class variant_t, typename... types_t >
+    struct mk< variant_t< types_t... >,
+               decltype( std::declval< variant_t< types_t... > >().valueless_by_exception(), void( 0 ) ) >
+    {
+        using result_t = variant_t< types_t... >;
+
+        template< std::size_t I >
+        static result_t recurse( int t_idx, nat v_idx )
+        {
+            if constexpr ( I < sizeof...( types_t ) )
+            {
+                using T = std::tuple_element_t< I, std::tuple< types_t... > >;
+                if ( t_idx == I )
+                    return result_t( std::in_place_index< I >, mk< T >::get( v_idx ) );
+                else
+                    return recurse< I + 1 >( t_idx, v_idx );
+            }
+            else
+                __builtin_unreachable();
+        }
+
+        static auto get( nat index )
+        {
+            auto [ v_idx, t_idx ] = divmod( index, sizeof...( types_t ) );
+            return recurse< 0 >( t_idx, v_idx );
+        }
+    };
+
+    template< template< typename > class optional_t, typename type_t >
+    struct mk< optional_t< type_t >,
+               decltype( std::declval< optional_t< type_t > >().has_value(), void( 0 ) ) >
+    {
+        static optional_t< type_t > get( nat index )
+        {
+            if ( index == 0 )
+                return {};
+            else
+                return mk< type_t >::get( index - 1 );
+        }
+    };
+
+    template< typename T >
+    T generic( nat index )
+    {
+        return mk< T >::get( index );
+    }
+
+    inline auto graph( nat index ) /* unorientend */
+    {
+        std::vector< std::pair< nat, nat > > graph;
+
+        if ( index == 0 )
+            return graph;
+
+        auto edge_idxs = brq::enumerate::set( index );
+        auto ecnt = *std::max_element( edge_idxs.begin(), edge_idxs.end() ) + 1;
+        auto [ size, rem ] = divmod( 2 + ( 1 + 8 * ecnt ).nth_root( 2 ), 2 );
+        size += rem > 0 ? 1 : 0;
+
+        for ( auto edge_idx : edge_idxs )
+        {
+            auto edge = brq::enumerate::set_param( size, 2, edge_idx );
+            graph.emplace_back( edge[ 0 ], edge[ 1 ] );
+        }
+
+        return graph;
+    }
+
+    struct exp_dist
+    {
+        nat start, cutoff, last, base;
+
+        static constexpr int prec = 40;
+        static inline const nat one = nat( 1 ) << prec;
+
+        exp_dist( nat c, nat l, double b )
+            : start( 0 ),
+              cutoff( nat( 2 ).pow( c + prec ) ),
+              last( nat( 2 ).pow( l + prec ) ),
+              base( b * std::pow( 2, prec ) )
+        {}
+
+        exp_dist( nat c, nat l )
+            : exp_dist( c, l, 0 )
+        {
+            double cf = ( cutoff >> prec ).fold< double >();
+            double lf = ( last >> prec ).fold< double >();
+            base = std::exp( ( std::log( lf ) - std::log( cf ) ) / cf ) * std::pow( 2, prec );
+        }
+
+        struct sentinel {};
+
+        auto begin() const { return *this; }
+        sentinel end() const { return {}; }
+
+        nat operator*() const { return start >> prec; }
+
+        exp_dist &operator++()
+        {
+            if ( start < cutoff )
+                start += one;
+            else
+                start = ( start * base ) >> prec;
+
+            return *this;
+        }
+
+        bool operator==( sentinel ) const
+        {
+            return start >= last;
+        }
+    };
+}
+
+namespace brq
+{
+    template< int n > auto enum_tuple( nat index ) { return enumerate::tuple< n >( index ); }
+    inline auto enum_list( nat index ) { return enumerate::list( index ); }
+    inline auto enum_set( nat index ) { return enumerate::set( index ); }
+    inline auto enum_map( nat index ) { return enumerate::map( index ); }
+    inline auto enum_int( nat index ) { return enumerate::integer( index ); }
+    inline auto enum_permutation( nat index ) { return enumerate::permutation( index ); }
+
+    template< typename T >
+    auto enum_gen( nat index ) { return enumerate::generic< T >( index ); }
+}

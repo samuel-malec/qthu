@@ -1,0 +1,661 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * (c) 2019 Petr Ročkai <code@fixp.eu>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+
+#include <cstring>
+#include <cstdint>
+#include <cstdlib>
+#include <cstdio>
+#include <cctype>
+#include <string_view>
+#include <charconv>
+#include <utility>
+#include <tuple>
+#include <iosfwd>
+
+#ifndef __inline_opt
+#define __inline_opt
+#endif
+
+namespace brq
+{
+    struct unit_t
+    {
+        bool operator==( const unit_t & ) const = default;
+        bool operator<=>( const unit_t & ) const = default;
+    };
+
+    inline unit_t unit;
+
+    struct vbase
+    {
+        virtual ~vbase() noexcept( false ) = default;
+    };
+
+    struct fallback
+    {
+        template< typename T >
+        constexpr fallback( const T & ) {}
+    };
+
+    struct primary_t {};
+    inline constexpr primary_t primary;
+
+    struct promise_tag {};
+
+    template< typename thunk_t >
+    struct promise : promise_tag, thunk_t
+    {
+        using result_t = decltype( std::declval< thunk_t >()() );
+        promise( auto &&thunk ) : thunk_t( thunk ) {}
+    };
+
+    template< typename thunk_t >
+    promise( thunk_t ) -> promise< thunk_t >;
+
+    decltype( auto ) force( auto &&p )
+    {
+        using arg_t = std::decay_t< decltype( p ) >;
+
+        if constexpr ( std::is_base_of_v< promise_tag, arg_t > )
+            return p();
+        else if constexpr ( std::is_lvalue_reference_v< decltype( p ) > )
+            return p;
+        else
+            return [&]{ return std::move( p ); }();
+    }
+
+    template< typename ptr_t,
+              typename = std::enable_if_t< !std::is_same_v< ptr_t, void * > &&
+                                           !std::is_same_v< ptr_t, const void * > > >
+    struct dereference
+    {
+        using type = decltype( *std::declval< ptr_t >() );
+    };
+
+    template< typename ptr_t >
+    struct dereference< ptr_t, std::enable_if_t< std::is_function_v< ptr_t > > > {};
+
+    template< typename ptr_t >
+    using dereference_t = typename dereference< ptr_t >::type;
+
+    constexpr inline std::string_view hex_digit = "0123456789abcdef";
+
+    /* A simple string builder, similar to std::stringstream but much lighter.
+     * Only works with 8-bit characters (i.e. no wchar_t or char32_t). Provides
+     * a basic selection of formatting operators. To provide formatting
+     * operators for custom types, the following idiom may be useful to use the
+     * same definition for std::ostream and for string_builder (also works for
+     * friend-style definitions):
+     *
+     * template< typename stream >
+     * auto operator<<( stream &o, my_type t ) -> decltype( o << "" )
+     * {
+     *     // ...
+     * }
+     *
+     * Besides accepting values to format, string_builder also understands
+     * std::dec and std::hex IO manipulators. */
+
+    struct string_builder
+    {
+        struct _data
+        {
+            char *buffer = nullptr;
+            int32_t capacity:30, offset:30;
+            bool hex:1, hex_prefix:1, oom:1;
+
+            _data() noexcept : capacity( 0 ), offset( 0 ),
+                               hex( false ), hex_prefix( false ), oom( false ) {}
+
+            auto reset()
+            {
+                auto rv = *this;
+                *this = _data();
+                return rv;
+            }
+        } _d;
+
+        string_builder( const string_builder & ) = delete;
+        string_builder( string_builder &&o ) : _d( o._d.reset() ) {}
+        string_builder &operator=( string_builder &&rhs )
+        {
+            std::free( _d.buffer );
+            _d = rhs._d.reset();
+            return *this;
+        }
+
+        string_builder() noexcept = default;
+        ~string_builder() noexcept { std::free( _d.buffer ); }
+
+        char *pointer() noexcept { return _d.buffer + _d.offset; }
+        char *buffer_end() noexcept { return _d.buffer + _d.capacity - 1; }
+        const char *buffer() const noexcept { return _d.buffer ? _d.buffer : ""; }
+        std::string_view data() const noexcept { return std::string_view( _d.buffer, _d.offset ); }
+
+        template< typename char_t = char >
+        auto str() const { return std::basic_string< char_t >( data() ); }
+
+        operator std::string_view() const noexcept { return data(); }
+        int size() const noexcept { return _d.offset; }
+        int rewind( int x ) noexcept { int rv = _d.offset; _d.offset = x; return rv; }
+        bool truncated() const noexcept { return _d.oom; }
+        void kill() { clear(); _d.oom = true; }
+
+        void rotate( int low, int high )
+        {
+            if ( size() < high )
+                return;
+
+            int start = size() - low;
+            std::memmove( _d.buffer, _d.buffer + start, low );
+            _d.offset = low;
+        }
+
+        string_builder &hex( bool h = true ) { _d.hex = h; return *this; }
+        string_builder &dec() { _d.hex = false; return *this; }
+
+        void clear()
+        {
+            std::free( _d.buffer );
+            _d.reset();
+        }
+
+        bool _make_space( int sz ) noexcept
+        {
+            if ( _d.oom )
+                return false;
+            if ( _d.offset + sz < _d.capacity )
+                return true;
+
+            auto max = []( int a, int b ) { return a > b ? a : b; };
+            int new_capacity = _d.capacity + max( _d.capacity / 2, sz + 1 );
+            void *mem = std::realloc( _d.buffer, new_capacity );
+            if ( mem )
+            {
+                _d.buffer = static_cast< char * >( mem );
+                _d.capacity = new_capacity;
+            }
+            else
+                _d.oom = true;
+
+            return !_d.oom;
+        }
+
+        string_builder &operator<<( std::string_view str ) noexcept
+        {
+            if ( !_make_space( str.size() ) ) return *this;
+            std::copy( str.begin(), str.end(), pointer() );
+            _d.offset += str.size();
+            _d.buffer[ _d.offset ] = 0;
+            return *this;
+        }
+
+        string_builder &operator<<( const string_builder &str ) noexcept
+        {
+            return *this << str.data();
+        }
+
+        string_builder &operator<<( std::u32string_view us ) noexcept
+        {
+            auto to_uint8_t = []( auto x ) -> uint8_t { return x; };
+
+            while ( !us.empty() )
+            {
+                if ( !_make_space( 4 ) ) return *this;
+
+                uint32_t wc = us.front();
+
+                if ( wc < 0x000080 || ( wc & 0xFFFFF800 ) == 0x00D800 )
+                {
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( wc ); 
+                }
+                else if ( wc < 0x000800 )
+                {
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( 0xC0 | ( wc >> 6 ) );
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( 0x80 | ( wc & 0x03F ) );
+                }
+                else if ( wc < 0x010000 )
+                {
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( 0xE0 |   ( wc >> 12 ) );
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( 0x80 | ( ( wc & 0x0FC0 ) >> 6 ) );
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( 0x80 |   ( wc & 0x003F ) );
+                }
+                else if ( wc < 0x110000 )
+                {
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( 0xF0 |   ( wc >> 18 ) );
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( 0x80 | ( ( wc & 0x03F000 ) >> 12 ) );
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( 0x80 | ( ( wc & 0x000FC0 ) >> 6 ) );
+                    _d.buffer[ _d.offset++ ] = to_uint8_t( 0x80 |   ( wc & 0x00003F ) );
+                }
+                else
+                    abort(); /* TODO */
+
+                us.remove_prefix( 1 );
+            }
+
+            return *this;
+        }
+
+        template< typename char_t >
+        std::enable_if_t< std::is_same_v< char_t, char >, string_builder >
+        &operator<<( const char_t &c ) noexcept
+        {
+            if ( !_make_space( 1 ) ) return *this;
+            _d.buffer[ _d.offset++ ] = c;
+            return *this;
+        }
+
+        template< typename char_t >
+        std::enable_if_t< std::is_same_v< char_t, char32_t >, string_builder >
+        &operator<<( const char_t &c ) noexcept
+        {
+            return *this << std::u32string_view( &c, 1 );
+        }
+
+        template< typename bool_t >
+        std::enable_if_t< std::is_same_v< std::remove_cv_t< bool_t >, bool >, string_builder >
+        &operator<<( bool_t b ) noexcept
+        {
+            return *this << ( b ? "true" : "false" );
+        }
+
+        string_builder &operator<<( std::byte c ) noexcept
+        {
+            return *this << int( c );
+        }
+
+        string_builder &operator<<( const void *ptr ) noexcept
+        {
+            auto was_hex = _d.hex;
+            _d.hex = true;
+            (*this) << uintptr_t( ptr );
+            _d.hex = was_hex;
+            return *this;
+        }
+
+        string_builder &operator<<( const char *str ) noexcept
+        {
+            return (*this) << ( str ? std::string_view( str ) : "<nullptr>" );
+        }
+
+        string_builder &operator<<( unit_t )
+        {
+            return *this << "()";
+        }
+
+        template< typename indirect_t >
+        auto operator<<( const indirect_t &c )
+               noexcept( noexcept( *this << std::declval< dereference_t< indirect_t > >() ) )
+            -> std::enable_if_t< !std::is_convertible_v< indirect_t, std::string_view > &&
+                                 !std::is_convertible_v< indirect_t, std::u32string_view > &&
+                                 !std::is_function_v< decltype( c ) > &&
+                                 static_cast< decltype( *c, !c ) >( true ) &&
+                                 std::is_lvalue_reference_v< decltype( *c ) >,
+                                 decltype( *this << std::declval< dereference_t< indirect_t > >() ) >
+        {
+            if ( c )
+                return *this << "&" << *c;
+            else
+                return *this << "(null)";
+        }
+
+        template< typename C >
+        auto operator<<( const C &c ) noexcept( noexcept( *this << *c.begin() ) )
+            -> std::enable_if_t< !std::is_convertible_v< C, std::string_view > &&
+                                 !std::is_convertible_v< C, std::u32string_view > &&
+                                 !std::is_same_v< decltype( c ), decltype( *c.begin() ) >,
+                                 decltype( *c.begin(), *c.end(), *this ) >
+        {
+            bool first = true;
+            *this << "[";
+            for ( const auto &e : c )
+                *this << ( first ? first = false, " " : ", " ) << e;
+            *this << ( first ? "]" : " ]" );
+            return *this;
+        }
+
+        template< typename P >
+        auto operator<<( const P &p )
+            noexcept( noexcept( *this << p.first << p.second ) )
+            -> decltype( *this << p.first << p.second )
+        {
+            return *this << "[" << p.first << ", " << p.second << "]";
+        }
+
+        template< typename val_t >
+        auto print_to_chars( const val_t &val, primary_t ) noexcept
+            -> decltype( std::to_chars( _d.buffer, _d.buffer, val ), void( 0 ) )
+        {
+            if ( std::is_integral< val_t >::value && val < 0 )
+                *this << "-";
+
+            if ( _d.hex && _d.hex_prefix )
+                *this << std::string_view( "0x" );
+
+            int cap = 16;
+            std::to_chars_result result;
+
+            do
+            {
+                if ( !_make_space( cap ) )
+                    return;
+                if constexpr ( std::is_integral< val_t >::value )
+                    result = std::to_chars( pointer(), buffer_end(),
+                                            val < 0 ? -val : val, _d.hex ? 16 : 10 );
+                else
+                    result = std::to_chars( pointer(), buffer_end(), val );
+                cap *= 2;
+            }
+            while ( result.ec == std::errc::value_too_large );
+
+            _d.offset = result.ptr - _d.buffer;
+            _d.buffer[ _d.offset ] = 0;
+        }
+
+        void print_to_chars( double val, fallback ) noexcept
+        {
+            if ( !_make_space( 32 ) )
+                return;
+            _d.offset += std::min( std::snprintf( _d.buffer + _d.offset, 32, "%f", val ), 32 );
+        }
+
+        template< typename val_t >
+        auto operator<<( const val_t &val ) noexcept
+            -> std::enable_if_t< std::is_arithmetic_v< val_t > &&
+                                 !std::is_same_v< val_t, bool > &&
+                                 !std::is_same_v< val_t, char > &&
+                                 !std::is_same_v< val_t, char32_t >,
+                                 string_builder & >
+        {
+            print_to_chars( val, primary );
+            return *this;
+        }
+
+        void print_char( char c )
+        {
+            switch ( c )
+            {
+                case '\0': *this << "\\0"; break;
+                case '\a': *this << "\\a"; break;
+                case '\b': *this << "\\b"; break;
+                case '\f': *this << "\\f"; break;
+                case '\n': *this << "\\n"; break;
+                case '\r': *this << "\\r"; break;
+                case '\t': *this << "\\t"; break;
+                case '\v': *this << "\\v"; break;
+                case '"': *this << "\\\""; break;
+                case '\\': *this << "\\\\"; break;
+
+                default:
+                    if ( std::isprint( c ) )
+                        *this << c;
+                    else
+                        *this << "\\x"
+                              << hex_digit[ uint8_t( c ) / 16 ]
+                              << hex_digit[ uint8_t( c ) % 16 ];
+            }
+        }
+
+    };
+
+    struct hex_guard
+    {
+        bool was_hex, was_prefix;
+        string_builder &b;
+
+        hex_guard( string_builder &b, bool prefix = false )
+            : was_hex( b._d.hex ), was_prefix( b._d.hex_prefix ), b( b )
+        {
+            b._d.hex = true;
+            b._d.hex_prefix = prefix;
+        }
+
+        ~hex_guard()
+        {
+            b._d.hex = was_hex;
+            b._d.hex_prefix = was_prefix;
+        }
+    };
+
+    template< typename type, typename = void >
+    struct printable
+    {
+        const type &ref;
+        bool operator==( const printable &o ) const = default;
+
+        explicit printable( const type &r ) : ref( r ) {}
+
+        friend auto &operator<<( brq::string_builder &b, const printable &e )
+        {
+            if constexpr ( requires { b << e.ref; } )
+                return b << e.ref;
+            else
+                return b << "⟨?⟩";
+        }
+    };
+
+    template<>
+    struct printable< char >
+    {
+        char c;
+        bool operator==( const printable &o ) const = default;
+
+        printable( char c ) : c( c ) {}
+
+        friend auto &operator<<( brq::string_builder &b, const printable &e )
+        {
+            b << "'";
+            b.print_char( e.c );
+            return b << "'";
+        }
+    };
+
+    template< typename type >
+    struct printable< type, std::enable_if_t< std::is_convertible_v< type, std::string_view > > >
+    {
+        std::string_view s;
+        printable( std::string_view s ) : s( s ) {}
+        printable( const char *s ) : s( s ?: "" ) {}
+
+        bool operator==( const printable & ) const = default;
+
+        friend auto &operator<<( brq::string_builder &b, printable e )
+        {
+            b << "\"";
+
+            for ( int i = 0; i < ssize( e.s ); ++i )
+                if ( i < 68 )
+                    b.print_char( e.s[ i ] );
+                else if ( i == 68 && e.s.size() > 80 )
+                    b << "\" { +" << ( e.s.size() - 80 ) << " bytes } \"";
+                else if ( e.s.size() - i < 12 )
+                    b.print_char( e.s[ i ] );
+
+            return b << "\"";
+        }
+    };
+
+    /* Format a bunch of values into a stream, separated by spaces. Values that
+     * don't have a string_builder formatting operator are printed as
+     * <unknown>, because TRACE statements can include values whose types
+     * depend on template parameters and we don't want TRACE uses to cause
+     * unexpected instantiation failures (especially for cases where the user
+     * doesn't care about the trace output). */
+
+    template< typename stream, typename T >
+    auto format_nofail( stream &acc, const T &t ) noexcept( noexcept( acc << t ) )
+        -> decltype( acc << t )
+    {
+        return acc << t;
+    }
+
+    template< typename stream >
+    decltype( auto ) format_nofail( stream &acc, fallback ) noexcept
+    {
+        return acc << "[?]";
+    }
+
+    template< bool nofail, typename stream, typename arg_t >
+    decltype( auto ) format_arg( stream &acc, const arg_t &arg )
+        noexcept( noexcept( format_nofail( acc , arg ) ) )
+    {
+        if constexpr ( nofail )
+            return format_nofail( acc, arg );
+        else
+            return acc << arg;
+    }
+
+    template< bool nofail = false, typename stream >
+    void format_args( const char *, stream & ) noexcept {}
+
+    template< bool nofail = false, typename stream, typename A, typename... Args >
+    void format_args( const char *sep, stream &acc, const A &a, const Args & ... as ) noexcept
+    {
+        int mark = acc.size();
+        decltype( auto ) acc_ = format_arg< nofail >( acc, a );
+
+        if ( mark != acc.size() )
+            acc_ << sep;
+
+        format_args< nofail >( sep, acc_, as... );
+    }
+
+    template< typename char_t >
+    using split_view_t = std::pair< std::basic_string_view< char_t >, std::basic_string_view< char_t > >;
+    using split_view = split_view_t< char >; // std::pair< std::string_view, std::string_view >;
+
+    template< typename char_t >
+    inline split_view_t< char_t > split( std::basic_string_view< char_t > p,
+                                         std::basic_string_view< char_t > d,
+                                         bool reverse = false ) noexcept
+    {
+        using view = std::basic_string_view< char_t >;
+        auto s = reverse ? p.rfind( d ) : p.find( d );
+        if ( s == p.npos )
+            return reverse ? split_view_t< char_t >{ view(), p } : split_view_t< char_t >{ p, view() };
+        auto q = p;
+        q.remove_prefix( s + d.size() );
+        p.remove_suffix( p.size() - s );
+        return { p, q };
+    }
+
+    template< typename char_t >
+    inline split_view_t< char_t > split( std::basic_string_view< char_t > p, char_t d,
+                                         bool reverse = false ) noexcept
+    {
+        return split( p, std::basic_string_view< char_t >( &d, 1 ), reverse );
+    }
+
+    inline split_view split( std::string_view p, char d, bool reverse = false ) noexcept
+    {
+        return split< char >( p, std::string_view( &d, 1 ), reverse );
+    }
+
+    inline split_view split( std::string_view p, const char *d, bool reverse = false ) noexcept
+    {
+        return split< char >( p, std::string_view( d ), reverse );
+    }
+
+    template< typename char_t >
+    inline bool starts_with( std::basic_string_view< char_t > s,
+                                    std::basic_string_view< char_t > t ) noexcept
+    {
+        if ( s.size() >= t.size() )
+        {
+            s.remove_suffix( s.size() - t.size() );
+            return s.compare( t ) == 0;
+        }
+        else
+            return false;
+    }
+
+    template< typename char_t >
+    inline bool ends_with( std::basic_string_view< char_t > s,
+                                  std::basic_string_view< char_t > t ) noexcept
+    {
+        if ( s.size() >= t.size() )
+        {
+            s.remove_prefix( s.size() - t.size() );
+            return s.compare( t ) == 0;
+        }
+        else
+            return false;
+    }
+
+    inline bool starts_with( std::string_view s, std::string_view t ) noexcept
+    {
+        return starts_with< char >( s, t );
+    }
+
+    inline bool ends_with( std::string_view s, std::string_view t ) noexcept
+    {
+        return ends_with< char >( s, t );
+    }
+
+    inline bool starts_with( std::u32string_view s, std::u32string_view t ) noexcept
+    {
+        return starts_with< char32_t >( s, t );
+    }
+
+    inline bool ends_with( std::u32string_view s, std::u32string_view t ) noexcept
+    {
+        return ends_with< char32_t >( s, t );
+    }
+
+    template< int n = 1, typename arg1_t, typename... args_t >
+    auto tuple_drop( const std::tuple< arg1_t, args_t... > &tuple )
+    {
+        using retval_t = std::tuple< args_t... >;
+        auto indices = std::index_sequence_for< args_t... >();
+
+        auto make_shorter = [&]< size_t... indices >( std::index_sequence< indices... > )
+        {
+            return retval_t{ static_cast< args_t >( std::get< indices + 1 >( tuple ) )... };
+        };
+
+        if constexpr ( n == 1 )
+            return make_shorter( indices );
+        else
+            return tuple_drop< n - 1 >( make_shorter( indices ) );
+    }
+
+    inline bool string_match( std::string_view pat, std::string_view str )
+    {
+        if ( ( pat.empty() && str.empty() ) || pat == "*" )
+            return true;
+        if ( pat.empty() || str.empty() )
+            return false;
+
+        if ( pat[ 0 ] == '*' )
+            return string_match( pat, str.substr( 1 ) ) ||
+                   string_match( pat.substr( 1 ), str );
+
+        if ( pat[ 0 ] == '\\' ) /* \x matches x, just like posix extended regexes */
+            pat.remove_prefix( 1 );
+
+        if ( pat.empty() || str.empty() || pat[ 0 ] != str[ 0 ] )
+            return false;
+
+        pat.remove_prefix( 1 );
+        str.remove_prefix( 1 );
+
+        return string_match( pat, str );
+    }
+}

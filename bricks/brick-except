@@ -1,0 +1,169 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * (c) 2016 Petr Ročkai <code@fixp.eu>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+
+#include "brick-trace"
+#include "brick-assert"
+#include <stdexcept>
+#include <system_error>
+#include <tuple>
+#include <functional>
+
+namespace brq
+{
+    /* This is a base class for exceptions which arise from improper use at the
+     * user level (as opposed to programmer level). Use this if you expect an
+     * exception to be seen by actual users. */
+
+    struct error : std::runtime_error, stacked_error
+    {
+        int _exit;
+
+        error( int exit, const auto &err )
+            : std::runtime_error( err ), _exit( exit )
+        {}
+
+        error( const auto &err )
+            : std::runtime_error( err ), _exit( 1 )
+        {}
+
+        std::string_view message() const { return what(); }
+        const char *describe() const noexcept { return what(); }
+    };
+
+    template< typename exc, typename... args_t >
+    struct construct_error
+    {
+        bool _moved_from = false;
+        std::tuple< args_t... > _args;
+        string_builder _what;
+
+        construct_error( args_t... args ) : _args( args... ) {}
+
+        construct_error( construct_error &&other )
+            : _args( std::move( other._args ) ), _what( std::move( other._what ) )
+        {
+            other._moved_from = true;
+        }
+
+        ~construct_error() noexcept( false )
+        {
+            if ( _moved_from || std::uncaught_exceptions() )
+                return; /* terminate if unwinding? */
+            auto args = std::tuple_cat( _args, std::make_tuple( _what.str() ) );
+            std::apply( []( auto... a ) -> void { throw exc( a... ); }, args );
+        }
+
+        template< typename type >
+        friend construct_error &&operator<<( construct_error &&err, const type &val )
+        {
+            err._what << val;
+            return std::move( err );
+        }
+
+        template< typename type >
+        friend construct_error &operator<<( construct_error &err, const type &val )
+        {
+            err._what << val;
+            return err;
+        }
+    };
+
+    struct system_error : std::system_error, stacked_error
+    {
+        system_error( const auto &w ) : system_error( errno, w ) {}
+        system_error( int e, const auto &w ) : std::system_error( e, std::system_category(), w ) {}
+        const char *describe() const noexcept { return what(); }
+    };
+
+    template< typename exc = error, typename... args_t >
+    construct_error< exc, args_t... > raise( args_t... args )
+    {
+        return { args... };
+    }
+
+    template< typename... args_t >
+    construct_error< system_error, args_t... > raise_sys( args_t... args )
+    {
+        return { args... };
+    }
+
+    template< typename fun_t >
+    struct finally
+    {
+        fun_t _fun;
+        finally( fun_t f ) : _fun( f ) {}
+        ~finally() noexcept( noexcept( _fun() ) ) { _fun(); }
+
+        finally( const finally & ) = delete;
+    };
+
+    template< typename val_t >
+    struct local_override
+    {
+        val_t &value;
+        val_t backup;
+
+        local_override( val_t &v, auto local )
+            : value( v ), backup( v )
+        {
+            value = local;
+        }
+
+        ~local_override()
+        {
+            value = backup;
+        }
+
+        local_override( const local_override & ) = delete;
+    };
+
+    struct terminate_guard
+    {
+        int exit_code;
+
+        terminate_guard( int exit = 0 ) : exit_code( exit ) {}
+
+        ~terminate_guard()
+        {
+            if ( stacked_error::active )
+            {
+                ERROR( stacked_error::active->describe() );
+                std::exit( 1 );
+            }
+            else if ( std::uncaught_exceptions() )
+            {
+                ERROR( "terminating due to an uncaught exception" );
+                abort();
+            }
+            else
+                std::exit( exit_code );
+        }
+    };
+
+    struct precondition_failed : std::exception {};
+
+    inline void precondition( bool x )
+    {
+        if ( !x )
+            throw precondition_failed{};
+    }
+}
+
+// vim: syntax=cpp tabstop=4 shiftwidth=4 expandtab ft=cpp

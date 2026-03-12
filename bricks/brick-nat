@@ -1,0 +1,765 @@
+#pragma once
+#include <brick-salloc>
+#include <brick-bitlevel>
+#include <brick-string>
+#include <cmath>
+#include <concepts>
+
+namespace brq::numeric
+{
+    template< typename type > struct is_integral : std::is_integral< type > {};
+    template<> struct is_integral< __uint128_t > : std::true_type {};
+    template<> struct is_integral< __int128_t >  : std::true_type {};
+
+    template< typename type >
+    constexpr bool is_integral_v = is_integral< type >::value;
+
+    template< typename type > struct make_unsigned : std::make_unsigned< type > {};
+    template<> struct make_unsigned< __uint128_t > { using type = __uint128_t; };
+    template<> struct make_unsigned< __int128_t >  { using type = __uint128_t; };
+
+    template< typename type >
+    using make_unsigned_t = typename make_unsigned< type >::type;
+
+    template< typename T > concept nat_like = is_integral_v< typename T::digit_t >;
+    template< typename T > concept int_like = nat_like< T > || is_integral_v< T >;
+
+    template< template< typename > class alloc_t = std_malloc_with_size >
+    struct nat
+    {
+        BRICK_OPTIONAL_ASSERTIONS( nat );
+
+        using digit_t = uint64_t;
+        using double_t = __uint128_t;
+
+        using alloc = alloc_t< digit_t >;
+        using ptr_t = typename alloc::pointer;
+        using rep_t = std::array< std::byte, std::max( sizeof( digit_t ), sizeof( ptr_t ) ) >;
+        static constexpr int digit_bits = sizeof( digit_t ) * 8;
+        static constexpr digit_t short_max = digit_t( 1 ) << ( digit_bits - 1 );
+        static constexpr digit_t digit_max = std::numeric_limits< digit_t >::max();
+        static constexpr double_t base = double_t( digit_max ) + 1;
+
+        rep_t _rep;
+
+        digit_t short_rep() const { return std::bit_cast< digit_t >( _rep ); }
+        digit_t short_digit() const { return short_rep() >> 1; }
+        ptr_t long_rep() const { return std::bit_cast< ptr_t >( _rep ); }
+
+        void set_short( digit_t d )
+        {
+            ASSERT_LEQ( d, short_max );
+            _rep = std::bit_cast< rep_t >( d << 1 | 1 );
+        }
+
+        bool is_short() const { return short_rep() & 1; }
+        bool is_long()  const { return !is_short(); }
+
+        int capacity() const
+        {
+            return is_long() ? alloc::size( long_rep() ) / sizeof( digit_t ) : 1;
+        }
+
+        void allocate( int count )
+        {
+            int size = count * sizeof( digit_t );
+            _rep = std::bit_cast< rep_t >( alloc::allocate( size ) );
+            for ( int i = 0; i < count; ++i )
+                long_rep()[ i ] = 0;
+        }
+
+        template< bool shrink = false >
+        void reallocate( int count )
+        {
+            ASSERT( is_long() );
+            ptr_t old = long_rep();
+            auto new_size = count * sizeof( digit_t );
+            auto copy_size = shrink ? new_size : alloc::size( old );
+            ASSERT_LEQ( copy_size, new_size );
+
+            allocate( count );
+            char *mem = static_cast< char * >( static_cast< void * >( &*long_rep() ) );
+
+            std::memcpy( mem, &*old, copy_size );
+
+            if ( !shrink )
+                alloc::free( old );
+        }
+
+        void make_long()
+        {
+            ASSERT( is_short() );
+
+            digit_t d = short_digit();
+            allocate( 2 );
+            set_digit( 0, d );
+
+            for ( int i = 1; i < capacity(); ++ i )
+                set_digit( i, 0 );
+        }
+
+        template< typename int_t = digit_t,
+                  typename = std::enable_if_t< is_integral_v< int_t > > >
+        nat( int_t n = 0 )
+        {
+            ASSERT_LEQ( int_t( 0 ), n );
+
+            make_unsigned_t< int_t > conv = n;
+
+            if ( conv < short_max )
+                set_short( conv );
+            else
+            {
+                allocate( sizeof( int_t ) / sizeof( digit_t ) + 1 );
+
+                for ( int i = 0; i < capacity(); ++ i )
+                {
+                    set_digit( i, conv );
+
+                    if constexpr ( sizeof( n ) > sizeof( digit_t ) )
+                        conv >>= digit_bits;
+                    else
+                        conv = 0;
+                }
+            }
+        }
+
+        nat( double v ) : nat()
+        {
+            unfold( v );
+        }
+
+        template< typename acc_t >
+        acc_t fold()
+        {
+            if ( is_short() )
+                return acc_t( short_digit() );
+
+            acc_t acc = 0;
+
+            for ( int i = capacity() - 1; i >= 0; --i )
+            {
+                acc *= base;
+                acc += digit_fast( i );
+            }
+
+            return acc;
+        }
+
+        template< typename acc_t >
+        void unfold( acc_t acc )
+        {
+            if ( acc < base )
+                set_short( acc );
+            else
+            {
+                acc_t fbase = acc_t( digit_max ) + 1;
+                int cap = std::ceil( std::log( acc ) / std::log( fbase ) );
+
+                if ( is_short() )
+                    allocate( cap );
+                else if ( cap > capacity() )
+                    reallocate( cap );
+
+                for ( int i = 0; i < capacity() && acc > 0; ++i )
+                {
+                    set_digit_fast( i, std::fmod( acc, fbase ) );
+                    acc /= fbase;
+                }
+            }
+        }
+
+        void detach()
+        {
+            if ( is_short() )
+                return;
+
+            auto cap = capacity();
+
+            for ( ; cap >= 1 && !digit_fast( cap - 1 ); -- cap );
+
+            if ( cap == 1 && digit_fast( 0 ) < short_max )
+                set_short( digit_fast( 0 ) );
+            else if ( cap == 0 ) /* TODO we probably want to make this impossible */
+                set_short( 0 );
+            else
+                reallocate< true >( cap );
+        }
+
+        nat( const nat &o ) : _rep( o._rep )
+        {
+            detach();
+        }
+
+        ~nat()
+        {
+            if ( is_long() )
+                alloc::free( long_rep() );
+        }
+
+        nat &operator=( const nat &o )
+        {
+            if ( is_long() )
+                alloc::free( long_rep() );
+
+            _rep = o._rep;
+            detach();
+            return *this;
+        }
+
+        nat &operator=( nat &&o )
+        {
+            if ( is_long() )
+                alloc::free( long_rep() );
+
+            _rep = o._rep;
+            o.set_short( 0 );
+            return *this;
+        }
+
+        nat( nat &&o ) : _rep( o._rep )
+        {
+            o.set_short( 0 );
+        }
+
+        digit_t digit_fast( int idx ) const
+        {
+            ASSERT( is_long() );
+            ASSERT_LT( idx, capacity() );
+            return long_rep()[ idx ];
+        }
+
+        void set_digit_fast( int idx, digit_t d )
+        {
+            ASSERT( is_long() );
+            ASSERT_LT( idx, capacity() );
+            long_rep()[ idx ] = d;
+        }
+
+        digit_t digit( int idx ) const
+        {
+            if ( is_short() )
+                return idx == 0 ? short_digit() : 0;
+            else if ( idx >= 0 && idx < capacity() )
+                return digit_fast( idx );
+            else
+                return 0;
+        }
+
+        void set_digit( int idx, digit_t d )
+        {
+            if ( is_short() && idx == 0 && d < short_max )
+                set_short( d );
+            else
+            {
+                if ( idx >= capacity() )
+                    reallocate( idx + idx / 2 + 1 );
+
+                set_digit_fast( idx, d );
+            }
+        }
+
+        friend auto compare_short_long( const nat &a, const nat &b )
+        {
+            ASSERT( a.is_short() );
+            ASSERT( !b.is_short() );
+
+            for ( int i = b.capacity() - 1; i >= 1; --i )
+                if ( b.digit_fast( i ) )
+                    return std::strong_ordering::less;
+
+            return a.short_digit() <=> b.digit_fast( 0 );
+        }
+
+        friend auto compare_long_long( const nat &a, const nat &b )
+        {
+            ASSERT_LEQ( a.capacity(), b.capacity() );
+
+            int i = b.capacity() - 1;
+            int a_cap = a.capacity();
+
+            for ( ; i >= a_cap; -- i )
+                if ( b.digit_fast( i ) )
+                    return std::strong_ordering::less;
+
+            for ( ; i >= 0; --i )
+                if ( auto r = a.digit_fast( i ) <=> b.digit_fast( i ); r != 0 )
+                    return r;
+
+            return std::strong_ordering::equal;
+        }
+
+        friend auto operator<=>( const nat &a, const nat &b )
+        {
+            if ( a.is_short() && b.is_short() )
+                return a.short_digit() <=> b.short_digit();
+
+            if ( a.is_short() )
+                return compare_short_long( a, b );
+            if ( b.is_short() )
+                return 0 <=> compare_short_long( b, a );
+
+            if ( a.capacity() < b.capacity() )
+                return compare_long_long( a, b );
+            else
+                return 0 <=> compare_long_long( b, a );
+        }
+
+        friend bool operator==( const int_like auto &a, const int_like auto &b ) /* optimize? */
+        {
+            return ( a <=> b ) == std::strong_ordering::equal;
+        }
+
+        bool operator!() const { return *this == 0; }
+        explicit operator bool() const { return !!*this; }
+
+        void operator++()
+        {
+            if ( is_short() && short_digit() < short_max )
+                set_short( short_digit() + 1 );
+            else
+            {
+                if ( is_short() )
+                    reallocate( 2 );
+                add_digit_and_carry( 1, 0 );
+            }
+        }
+
+        void add_long( const nat &b, int b_offset = 0, int max_digits = 0 )
+        {
+            ASSERT( is_long() );
+            auto cap = b.capacity() + b_offset + 1; // ( b.digit( b.capacity() - 1 ) != 0 );
+
+            auto b_digits = b.capacity();
+            if ( max_digits && max_digits < b_digits )
+                b_digits = max_digits;
+
+            digit_t carry = 0;
+
+            if ( cap > capacity() )
+                reallocate( cap );
+
+            for ( int i = 0; i < b_digits; ++i )
+            {
+                int j = i + b_offset;
+                auto &rd = long_rep()[ j ];
+                carry  = __builtin_add_overflow( rd, carry, &rd );
+                carry |= __builtin_add_overflow( rd, b.digit( i ), &rd );
+            }
+
+            for ( int i = b_digits; carry; ++ i )
+            {
+                int j = i + b_offset;
+
+                if ( max_digits && i >= max_digits )
+                    break;
+
+                if ( j >= capacity() )
+                {
+                    reallocate( j + 1 );
+                    set_digit( j, 0 );
+                }
+
+                carry = __builtin_add_overflow( digit_fast( j ), carry, &long_rep()[ j ] );
+            }
+        }
+
+        friend nat operator+( const nat &a, const nat &b )
+        {
+            if ( a.is_short() && b.is_short() )
+                return nat( a.short_digit() + b.short_digit() );
+
+            if ( a.capacity() >= b.capacity() )
+            {
+                nat out = a;
+
+                if ( out.is_short() )
+                {
+                    if ( b.is_short() )
+                        return out + b;
+                    else
+                    {
+                        nat b_ = b;
+
+                        if ( b_.is_short() )
+                            return out + b_;
+                        else
+                        {
+                            b_.add_long( out );
+                            return b_;
+                        }
+                    }
+                }
+
+                out.add_long( b );
+                return out;
+            }
+            else
+                return b + a;
+        }
+
+        bool sub_long( const nat &b, int b_offset = 0 )
+        {
+            digit_t borrow = 0;
+
+            for ( int i = 0; i < b.capacity(); ++i )
+            {
+                if ( i + b_offset >= capacity() )
+                {
+                    if ( b.digit( i ) == 0 )
+                        continue;
+                    else
+                        NOT_IMPLEMENTED();
+                }
+
+                digit_t rd;
+                borrow  = __builtin_sub_overflow( digit_fast( i + b_offset ), borrow, &rd );
+                borrow |= __builtin_sub_overflow( rd, b.digit( i ), &rd );
+                set_digit_fast( i + b_offset, rd );
+            }
+
+            for ( int i = b.capacity() + b_offset; borrow; ++ i )
+            {
+                if ( i >= capacity() )
+                    break;
+
+                borrow = __builtin_sub_overflow( digit_fast( i ), borrow, &long_rep()[ i ] );
+            }
+
+            return borrow;
+        }
+
+        friend nat operator-( const nat &a, const nat &b )
+        {
+            ASSERT_LEQ( b, a );
+
+            if ( a.is_short() )
+                return nat( a.short_digit() - b.digit( 0 ) );
+
+            nat out = a;
+
+            if ( out.is_short() )
+                return nat( out.short_digit() - b.digit( 0 ) );
+
+            out.sub_long( b );
+            return out;
+        }
+
+        nat &operator-=( const nat &b )
+        {
+            if ( is_short() )
+                set_short( short_digit() - b.digit( 0 ) );
+            else
+                sub_long( b );
+
+            return *this;
+        }
+
+        bool sub( const nat &b, int b_offset = 0 )
+        {
+            if ( is_short() )
+            {
+                auto shifted = b << b_offset;
+
+                if ( shifted.is_short() )
+                {
+                    digit_t x;
+                    bool borrow = __builtin_sub_overflow( short_digit(), shifted.short_digit(), &x );
+                    set_short( x );
+                    return borrow;
+                }
+                else
+                    NOT_IMPLEMENTED();
+            }
+            else
+                return sub_long( b, b_offset );
+
+            abort();
+        }
+
+        digit_t add_digit_long( digit_t d, int pos )
+        {
+            return __builtin_add_overflow( digit_fast( pos ), d, &long_rep()[ pos ] );
+        }
+
+        void add_digit_and_carry( digit_t d, int pos )
+        {
+            while ( d )
+                d = add_digit_long( d, pos++ );
+        }
+
+        friend nat operator*( const nat &a, const nat &b )
+        {
+            if ( a.is_short() && b.is_short() )
+                 return nat( double_t( a.short_digit() ) * double_t( b.short_digit() ) );
+
+            nat out;
+            out.allocate( a.capacity() + b.capacity() );
+
+            for ( int i = 0; i < b.capacity(); ++i )
+            {
+                double_t carry = 0;
+
+                for ( int j = 0; j < a.capacity(); ++j )
+                {
+                    double_t prod = double_t( a.digit( j ) ) * double_t( b.digit( i ) ) + carry;
+                    carry = prod >> digit_bits;
+                    prod &= digit_max;
+                    carry += out.add_digit_long( prod, i + j );
+                }
+
+                out.add_digit_and_carry( carry, i + a.capacity() );
+            }
+
+            return out;
+        }
+
+        /* TODO */
+        nat &operator+=( const nat &o ) { return *this = *this + o; }
+        nat &operator*=( const nat &o ) { return *this = *this * o; }
+        nat &operator/=( const nat &o ) { return *this = *this / o; }
+        nat &operator%=( const nat &o ) { return *this = *this % o; }
+
+        friend nat operator<<( const nat &a, int total_bits )
+        {
+            nat out;
+            int digits = total_bits / digit_bits;
+            int bits = total_bits % digit_bits;
+
+            out.allocate( a.capacity() + digits + ( bits ? 1 : 0 ) );
+
+            for ( int i = 0; i < a.capacity() + ( bits ? 1 : 0 ); ++i )
+            {
+                digit_t d = a.digit( i ) << bits;
+                if ( bits )
+                    d |= a.digit( i - 1 ) >> ( digit_bits - bits );
+                out.set_digit_fast( i + digits, d );
+            }
+
+            return { out };
+        }
+
+        nat &operator>>=( int total_bits )
+        {
+            if ( is_short() )
+                set_short( short_digit() >> total_bits );
+            else
+            {
+                int digits = total_bits / digit_bits;
+                int bits = total_bits % digit_bits;
+
+                for ( int i = 0; i < capacity(); ++i )
+                {
+                    digit_t d = digit( i + digits ) >> bits;
+                    if ( bits )
+                        d |= digit( i + digits + 1 ) << ( digit_bits - bits );
+                    set_digit_fast( i, d );
+                }
+            }
+
+            return *this;
+        }
+
+        friend nat operator>>( const nat &a, int total_bits )
+        {
+            if ( a.is_short() )
+                return nat( a.short_digit() >> total_bits);
+            else
+                return nat( a ) >> total_bits;
+        }
+
+        friend nat operator>>( nat &&out, int total_bits )
+        {
+            return out >>= total_bits;
+        }
+
+        friend std::pair< nat, nat > divmod( const nat &a, const nat &b )
+        {
+            if ( a.is_short() && b.is_short() )
+                return { nat( a.short_digit() / b.short_digit() ),
+                         nat( a.short_digit() % b.short_digit() ) };
+
+            int a_digits = a.capacity(), b_digits = b.capacity();
+
+            for ( ; !b.digit( b_digits - 1 ); -- b_digits );
+            for ( ; !a.digit( a_digits - 1 ); -- a_digits );
+
+            int bitshift = std::countl_zero( b.digit( b_digits - 1 ) );
+
+            auto u = a << bitshift;
+            auto v = b << bitshift;
+
+            auto n = b_digits;
+            auto m = a_digits - b_digits;
+
+            nat q;
+            q.allocate( m + 1 );
+
+            for ( int j = m; j >= 0; --j )
+            {
+                double_t nom = double_t( u.digit( j + n ) ) << digit_bits | u.digit( j + n - 1 );
+                double_t den = v.digit( n - 1 );
+                double_t q_hat = nom / den, r_hat = nom % den;
+
+                auto overshot = [&]
+                {
+                    ASSERT_LT( q_hat, base );
+                    ASSERT_LT( r_hat, base );
+                    return q_hat * v.digit( n - 2 ) > base * r_hat + u.digit( j + n - 2 );
+                };
+
+                auto correct = [&]{ q_hat -= 1; r_hat += v.digit( n - 1 ); };
+
+                if ( q_hat == base || overshot() )
+                {
+                    correct();
+
+                    if ( r_hat < base && overshot() )
+                        correct();
+                }
+
+                if ( u.sub( nat( q_hat ) * v, j ) )
+                {
+                    q_hat -= 1;
+                    u.add_long( v, j, n + 1 );
+                }
+
+                q.set_digit( j, q_hat );
+            }
+
+            return { q, u >> bitshift };
+        }
+
+        friend nat operator/( const auto &a, const auto &b ) { return std::get< 0 >( divmod( a, b ) ); }
+        friend nat operator%( const auto &a, const auto &b ) { return std::get< 1 >( divmod( a, b ) ); }
+
+        template< typename exp_t >
+        nat pow( exp_t exp )
+        {
+            nat n = *this, odd = 1;
+
+            if ( exp == 0 )
+                return 1;
+
+            while ( exp > 1 )
+            {
+                bool is_odd = false;
+
+                if constexpr ( std::is_same_v< exp_t, nat > )
+                    is_odd = exp.digit( 0 ) % 2 == 1;
+                else
+                    is_odd = exp % 2 == 1;
+
+                if ( is_odd )
+                    odd *= n;
+
+                n *= n;
+                exp >>= 1;
+            }
+
+            return n * odd;
+        }
+
+        int log2() const
+        {
+            int digits = capacity();
+            for ( ; !digit( digits - 1 ); -- digits );
+            return digits * digit_bits - std::countl_zero( digit( digits - 1 ) );
+        }
+
+        nat nth_root( int n )
+        {
+            nat k = *this;
+
+            if ( n == 1 || k == 0 )
+                return k;
+
+            auto s = nat( 2 ) << ( k.log2() / n );
+
+            while ( true )
+            {
+                const auto t = ( n - 1 ) * s + k / s.pow( n - 1 );
+                const auto s_next = t / n;
+
+                if ( s_next >= s )
+                    return s;
+                else
+                    s = s_next;
+            }
+        }
+
+        friend string_builder &operator<<( string_builder &b, const nat &n )
+        {
+            b << "0x";
+            int j = n.capacity() - 1;
+
+            for ( ; j > 0 && !n.digit( j ); --j ); /* skip zeros */
+
+            b << std::hex << n.digit( j );
+
+            for ( -- j; j >= 0; -- j )
+                b << std::hex << pad( 16, '0' ) << n.digit( j ) << mark;
+
+            return b;
+        }
+
+        friend nat comb( const nat &n, const nat &k )
+        {
+            if ( k > n )
+                return 0;
+
+            nat r = 1;
+            nat nom_f = n, denom_f = 1;
+
+            while ( nom_f > std::max( k, n - k ) )
+            {
+                ASSERT_LEQ( denom_f, k < n - k ? k : n - k );
+                r = r * nom_f;
+                ASSERT_EQ( r % denom_f, 0 );
+                r = r / denom_f;
+
+                nom_f -= 1;
+                ++ denom_f;
+            }
+
+            return r;
+        }
+
+        friend nat fact( nat n )
+        {
+            nat r = 1;
+
+            for ( int i = 2; i <= n; ++i )
+                r *= i;
+
+            return r;
+        }
+
+        operator uint64_t() const { return digit( 0 ); }
+
+        friend auto operator<=>( int_like auto const &a, int_like auto const &b )
+        {
+            return static_cast< const nat & >( a ) <=> static_cast< const nat & >( b );
+        }
+
+        friend nat operator+( const int_like auto &a, const int_like auto &b )
+        {
+            return static_cast< const nat & >( a ) + static_cast< const nat & >( b );
+        }
+
+        friend auto operator-( const int_like auto &a, const int_like auto &b )
+        {
+            return static_cast< const nat & >( a ) - static_cast< const nat & >( b );
+        }
+
+        friend auto operator*( const int_like auto &a, const int_like auto &b )
+        {
+            return static_cast< const nat & >( a ) * static_cast< const nat & >( b );
+        }
+    };
+}
+
+namespace brq
+{
+    using nat = numeric::nat<>;
+}

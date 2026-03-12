@@ -1,0 +1,575 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * Macros for run-time-configurable debug tracing.
+ */
+
+/*
+ * (c) 2019 Petr Ročkai <code@fixp.eu>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+
+#include "brick-min"
+#include <array>
+#include <cmath>
+#include <cstdio>
+#include <exception>
+
+#ifdef __divine__
+#include <sys/cdefs.h>
+#include <sys/trace.h>
+#include <util/array.hpp>
+#else
+#include <vector>
+#include <cstring>
+#include <pthread.h>
+#define __debugfn
+#define __boring
+#endif
+
+#ifdef __unix__
+#include <unistd.h>
+#include <syslog.h>
+#include <signal.h>
+#include <sys/socket.h>
+#include <sys/wait.h>
+#endif
+
+#if defined( __clang__ ) && __clang_major__ < 16
+#define BRICK_DELAY( ... ) __VA_ARGS__
+#define BRICK_FORCE( x ) x
+#else
+#define BRICK_DELAY( ... ) ::brq::promise{ [&]< typename = void >() -> decltype( auto ) \
+{ \
+    auto &&_tmp_ = __VA_ARGS__; \
+    if constexpr ( std::is_lvalue_reference_v< decltype( _tmp_ ) > ) \
+        return _tmp_; \
+    else \
+        return [&]{ return std::move( _tmp_ ); }(); \
+} }
+
+#define BRICK_FORCE( x ) ::brq::force( x )
+#endif
+
+/* The purpose of the TRACE macro is to allow tracing statements to be included
+ * in production code, just like ASSERT macros allow for sanity checks and
+ * pre/post-condition checking. If compiled with NDEBUG, it's a noop and in
+ * debug builds, the output must be enabled by setting environment variables
+ * TRACE and optionally BRICK_NOTRACE, which accept either `all`, a file
+ * name (without path) or a file name and a line number (formatted like
+ * `file.cpp:15`). A runtime-disabled trace point compiles to a few lookups in
+ * std::unordered_set.
+ *
+ * Normally, the formatted trace output is printed using std::cerr. The
+ * formatting is done using a brq::string_builder (see below) to cut down on
+ * overhead and to prevent exceptions being thrown. When built for DiOS, the
+ * output is done unconditionally using the __dios_trace mechanism, and the
+ * entire trace function is marked as __debugfn (i.e. it is not executed during
+ * model checking, only for counter-example generation -- TRACE therefore only
+ * causes very modest overhead in DIVINE). */
+
+#define BRICK_DELAY_A(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_B( __VA_ARGS__ ) )
+#define BRICK_DELAY_9(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_A( __VA_ARGS__ ) )
+#define BRICK_DELAY_8(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_9( __VA_ARGS__ ) )
+#define BRICK_DELAY_7(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_8( __VA_ARGS__ ) )
+#define BRICK_DELAY_6(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_7( __VA_ARGS__ ) )
+#define BRICK_DELAY_5(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_6( __VA_ARGS__ ) )
+#define BRICK_DELAY_4(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_5( __VA_ARGS__ ) )
+#define BRICK_DELAY_3(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_4( __VA_ARGS__ ) )
+#define BRICK_DELAY_2(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_3( __VA_ARGS__ ) )
+#define BRICK_DELAY_1(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_2( __VA_ARGS__ ) )
+#define BRICK_DELAY_0(x, ...) BRICK_DELAY( x ) __VA_OPT__(, BRICK_DELAY_1( __VA_ARGS__ ) )
+
+#define BRICK_SHARP_A(x, ...) #x __VA_OPT__(, BRICK_SHARP_B( __VA_ARGS__ ) )
+#define BRICK_SHARP_9(x, ...) #x __VA_OPT__(, BRICK_SHARP_A( __VA_ARGS__ ) )
+#define BRICK_SHARP_8(x, ...) #x __VA_OPT__(, BRICK_SHARP_9( __VA_ARGS__ ) )
+#define BRICK_SHARP_7(x, ...) #x __VA_OPT__(, BRICK_SHARP_8( __VA_ARGS__ ) )
+#define BRICK_SHARP_6(x, ...) #x __VA_OPT__(, BRICK_SHARP_7( __VA_ARGS__ ) )
+#define BRICK_SHARP_5(x, ...) #x __VA_OPT__(, BRICK_SHARP_6( __VA_ARGS__ ) )
+#define BRICK_SHARP_4(x, ...) #x __VA_OPT__(, BRICK_SHARP_5( __VA_ARGS__ ) )
+#define BRICK_SHARP_3(x, ...) #x __VA_OPT__(, BRICK_SHARP_4( __VA_ARGS__ ) )
+#define BRICK_SHARP_2(x, ...) #x __VA_OPT__(, BRICK_SHARP_3( __VA_ARGS__ ) )
+#define BRICK_SHARP_1(x, ...) #x __VA_OPT__(, BRICK_SHARP_2( __VA_ARGS__ ) )
+#define BRICK_SHARP_0(x, ...) #x __VA_OPT__(, BRICK_SHARP_1( __VA_ARGS__ ) )
+#define BRICK_LOCATION      ::brq::trace_location{ __LINE__, __FILE__ }
+
+#define BRICK_TRACE(NF, N, ...) \
+    ::brq::trace_fn< NF, N >( BRICK_LOCATION, \
+                              std::tuple{ BRICK_SHARP_0( __VA_ARGS__ ) }, \
+                              std::forward_as_tuple( BRICK_DELAY_0( __VA_ARGS__ ) ) )
+
+#ifdef NDEBUG
+#define TRACE(...) static_cast< decltype(__VA_ARGS__, void(0)) >(0)
+#define NOISE(...) static_cast< decltype(__VA_ARGS__, void(0)) >(0)
+#else
+#define TRACE(...)  BRICK_TRACE( ::brq::trace_fmt::spaced, ::brq::trace_level::trace, __VA_ARGS__ )
+#define TRACE_(...) BRICK_TRACE( ::brq::trace_fmt::packed, ::brq::trace_level::trace, __VA_ARGS__ )
+#define TRACEX(...) BRICK_TRACE( ::brq::trace_fmt::named,  ::brq::trace_level::trace, __VA_ARGS__ )
+#define NOISE(...)  BRICK_TRACE( ::brq::trace_fmt::named,  ::brq::trace_level::noise, __VA_ARGS__ )
+#endif
+#define DEBUGX(...) BRICK_TRACE( ::brq::trace_fmt::named,  ::brq::trace_level::debug, __VA_ARGS__ )
+#define DEBUG(...)  BRICK_TRACE( ::brq::trace_fmt::spaced, ::brq::trace_level::debug, __VA_ARGS__ )
+#define INFO(...)   BRICK_TRACE( ::brq::trace_fmt::raw,    ::brq::trace_level::info,  __VA_ARGS__ )
+#define INFO_(...)  BRICK_TRACE( ::brq::trace_fmt::packed, ::brq::trace_level::info,  __VA_ARGS__ )
+#define WARN(...)   BRICK_TRACE( ::brq::trace_fmt::raw,    ::brq::trace_level::warn,  __VA_ARGS__ )
+#define ERROR(...)  BRICK_TRACE( ::brq::trace_fmt::raw,    ::brq::trace_level::error, __VA_ARGS__ )
+#define ERROR_(...) BRICK_TRACE( ::brq::trace_fmt::packed, ::brq::trace_level::error, __VA_ARGS__ )
+
+namespace brq
+{
+    enum class trace_fmt { raw, packed, spaced, named };
+
+    /* Wrap __FILE__ and __LINE__. Needs to be cheap to construct and pass
+     * around, since in debug builds this happens a lot. */
+
+    struct trace_location
+    {
+        int line;
+        const char *_file;
+
+        std::string_view filename() const noexcept
+        {
+            std::string_view r( _file );
+            auto idx = r.rfind( '/' );
+            r.remove_prefix( idx == r.npos ? 0 : idx + 1 );
+            return r;
+        }
+
+        std::string_view file() const noexcept
+        {
+            return _file;
+        }
+    };
+
+    enum class trace_level
+    {
+        error, warn, info, debug, trace, noise
+    };
+
+    static constexpr std::array< const char *, 6 > trace_level_name =
+        { "error", "warning", "info", "debug", "trace", "noise" };
+
+
+    /* In debug builds, decide which traces are active at run-time. This is to
+     * prevent swamping the user with irrelevant traces from library code they
+     * might be using. For short programs (e.g. unit tests), it might be okay
+     * to just say `env TRACE=+ program`. */
+
+    template< typename T >
+    T &singleton() noexcept( std::is_nothrow_default_constructible_v< T > )
+    {
+        static T value;
+        return value;
+    }
+
+    inline void trace_dump( int fd = 2 ) noexcept;
+
+    struct trace
+    {
+        struct rule_t
+        {
+            std::string_view pattern;
+            int line;
+            trace_level level;
+        };
+
+#ifdef __divine__
+        using rules_t = __dios::Array< rule_t >;
+        static constexpr bool nothrow = true;
+#else
+        using rules_t = std::vector< rule_t >;
+        static constexpr bool nothrow = false;
+#endif
+        rules_t _rules;
+        bool _print_tid = false, _print_location = false, _use_syslog = false, _use_buffer = false;
+        char *_syslog_meta = nullptr;
+        string_builder _buffer;
+        int _log_socket = -1;
+
+        void use_syslog( bool s = true, std::string_view meta = "", int facility = LOG_USER )
+        {
+            std::free( _syslog_meta );
+            _syslog_meta = nullptr;
+            _use_syslog = s;
+
+            if ( s )
+            {
+                _syslog_meta = static_cast< char * >( std::malloc( meta.size() + 1 ) );
+                memcpy( _syslog_meta, meta.data(), meta.size() );
+                _syslog_meta[ meta.size() ] = 0;
+                ::openlog( _syslog_meta, LOG_NDELAY, facility );
+            }
+        }
+
+        void use_buffer( bool s = true )
+        {
+            _use_buffer = s;
+            _buffer.clear();
+        }
+
+#ifdef __unix__
+        void use_fork()
+        {
+            int fds[ 2 ];
+            socketpair( AF_UNIX, SOCK_SEQPACKET, 0, fds );
+            pid_t pid = fork();
+
+            if ( pid == 0 )
+            {
+                _log_socket = fds[ 0 ];
+                close( fds[ 1 ] );
+                return;
+            }
+
+            int listen_fd = fds[ 1 ];
+            close( fds[ 0 ] );
+            char buffer[ 4096 ];
+
+            while ( true )
+            {
+                int bytes = ::read( listen_fd, buffer, 4096 );
+                if ( bytes == -1 || bytes == 0 )
+                    break; // now what
+                if ( buffer[ 0 ] == 0 ) /* control message */
+                    _buffer.clear(); /* TODO */
+                else
+                    do_buffer( std::string_view( buffer, bytes - 1 ) );
+
+            }
+
+            close( listen_fd );
+            int status;
+            trace_dump();
+            waitpid( pid, &status, 0 );
+
+            if ( WIFEXITED( status ) )
+                std::exit( WEXITSTATUS( status ) );
+            else if ( WIFSIGNALED( status ) )
+            {
+                dprintf( 2, "main process killed by signal %d\n", WTERMSIG( status ) );
+                std::exit( 1 );
+            }
+            else
+                std::abort(); // what the hell
+        }
+#endif
+
+        trace() noexcept( nothrow )
+        {
+            if ( auto env = getenv( "TRACE" ) )
+            {
+                add_rules( env );
+                _print_location = true;
+            }
+            else
+                add_rule( "+", trace_level::info, 0 );
+        }
+
+        static std::string_view level( trace_level i ) noexcept
+        {
+            return trace_level_name[ int( i ) ];
+        }
+
+        static trace_level level( std::string_view name ) noexcept
+        {
+            for ( int i = 0; i < int( trace_level_name.size() ); ++i )
+                if ( trace_level_name[ i ] == name )
+                    return trace_level( i );
+            return trace_level::debug;
+        }
+
+        void add_rule( std::string_view s, std::string_view l ) noexcept ( nothrow )
+        {
+            add_rule( s, level( l ) );
+        }
+
+        void add_rule( std::string_view pattern, trace_level level, int line = 0 ) noexcept ( nothrow )
+        {
+            _rules.push_back( rule_t{ pattern, line, level } );
+        }
+
+        void add_rules( std::string_view str ) noexcept ( nothrow )
+        {
+            while ( !str.empty() )
+            {
+                auto [ first, rest ] = split( str, ',' );
+                auto [ spec, level_s ] = split( first, '/' );
+                auto [ filename, line_s ] = split( spec, ':' );
+
+                int line = 0;
+                trace_level lvl = level( level_s );
+
+                if ( line_s.size() )
+                    line = strtol( line_s.data(), nullptr, 10 );
+
+                add_rule( filename, lvl, line );
+                str = rest;
+            }
+        }
+
+        bool enabled( trace_level level, const trace_location &l ) noexcept
+        {
+            bool print = false;
+
+            for ( auto r : _rules )
+                if ( r.pattern == "+" || string_match( r.pattern, l.file() ) )
+                {
+                    if ( r.line && r.line != l.line )
+                        continue; /* no match */
+                    print = int( r.level ) >= int( level );
+                }
+
+            return print;
+        }
+
+        bool prepare( string_builder &b, trace_level level, trace_location location ) noexcept
+        {
+            if ( !enabled( level, location ) )
+                return false;
+
+            b << "[" << this->level( level ) << "] ";
+
+            if ( _print_location )
+            {
+                b << location.filename() << ":";
+                for ( int i = std::log( location.line ) / std::log( 10 ); i < 4; ++i )
+                    b << " ";
+                b << location.line << ": ";
+            }
+
+            if ( _print_tid )
+                b << "[" << pthread_self() << "] ";
+
+            return true;
+        }
+
+#ifdef __divine__
+        void do_print( string_builder &b, trace_level ) noexcept
+        {
+            if ( b.truncated() )
+                __vm_cancel();
+            __dios_trace_internal( 0, "%s", b.buffer() );
+        }
+#else
+        void do_print( string_builder &b, trace_level level ) noexcept
+        {
+            b << "\n";
+#ifdef __unix__
+            if ( _use_syslog )
+                ::syslog( level > trace_level::error ? LOG_DEBUG : LOG_INFO, "%s", b.buffer() );
+            else
+                ::write( _log_socket >= 0 ? _log_socket : 2, b.buffer(), b.size() );
+#else
+            std::fwrite( b.buffer(), 1, b.size(), stderr );
+            std::fflush( stderr );
+#endif
+        }
+#endif
+
+        void do_buffer( std::string_view data )
+        {
+            _buffer.rotate( 1024 * 1024, 2 * 1024 * 1024 );
+            _buffer << data << "\n";
+        }
+
+        void print( string_builder &b, trace_level level = trace_level::trace ) noexcept
+        {
+            if ( _use_buffer )
+                do_buffer( b.data() );
+            else
+                do_print( b, level );
+        }
+    };
+
+    inline struct trace &trace() noexcept { return singleton< struct trace >(); }
+
+    template< trace_fmt fmt, trace_level level >
+    auto trace_format( brq::string_builder &, const std::tuple<> &, const std::tuple<> &,
+                       bool = false, bool = false, std::exception_ptr eptr = {} ) noexcept
+    {
+        return eptr;
+    }
+
+    template< trace_fmt fmt, trace_level level,
+              typename name_t, typename... names_t,
+              typename val_t, typename... vals_t >
+    auto trace_format( brq::string_builder &b,
+                       const std::tuple< name_t, names_t... > &names,
+                       const std::tuple< val_t, vals_t... > &vals,
+                       bool comma = false, bool space = false,
+                       std::exception_ptr eptr = {} ) noexcept
+    {
+        static_assert( sizeof...( vals_t ) == sizeof...( names_t ) );
+
+        auto a_name = std::get< 0 >( names );
+        int item_start = b.size();
+
+        if ( space && !comma )
+            b << " ";
+
+        if ( fmt == trace_fmt::named )
+            b << ( comma ? ", " : "" ) << a_name << " → ";
+
+        int value_start = b.size();
+
+        try
+        {
+            const auto &val = BRICK_FORCE( std::get< 0 >( vals ) );
+            if constexpr ( fmt == trace_fmt::raw )
+                b << val;
+            else
+                format_arg< true >( b, printable( val ) );
+        }
+        catch ( ... )
+        {
+            eptr = std::current_exception();
+            b << "[exception]";
+        }
+
+        auto a_str = b.data().substr( value_start );
+
+        if ( a_str == a_name || !std::is_same_v< decltype( a_name ), const char * > )
+        {
+            b.rewind( item_start );
+            if constexpr ( requires { b << BRICK_FORCE( std::get< 0 >( vals ) ); } )
+                b << ( space ? " " : "" ) << BRICK_FORCE( std::get< 0 >( vals ) );
+            else
+                __builtin_trap();
+            comma = false;
+        }
+        else
+            comma = fmt == trace_fmt::named;
+
+        return trace_format< fmt, level >
+                           ( b, tuple_drop( names ), tuple_drop( vals ),
+                             comma, fmt != trace_fmt::packed, eptr );
+    }
+
+    inline thread_local std::array< char, 16 > trace_indent_buffer{};
+    inline thread_local unsigned trace_indent_depth = 0;
+
+    struct trace_indent
+    {
+        trace_indent()
+        {
+            for ( int i = 0; i < 2 && trace_indent_depth < trace_indent_buffer.size(); ++i )
+                trace_indent_buffer[ trace_indent_depth++ ] = ' ';
+        }
+
+        ~trace_indent()
+        {
+            for ( int i = 0; i < 2 && trace_indent_depth > 0; ++i )
+                trace_indent_buffer[ --trace_indent_depth ] = 0;
+        }
+    };
+
+    template< trace_fmt fmt, trace_level level, typename... names_t, typename... vals_t >
+    __debugfn void trace_fn( trace_location location,
+                             const std::tuple< names_t... > &names,
+                             const std::tuple< vals_t... > &vals )
+        noexcept( noexcept(( format_arg< true >( std::declval< brq::string_builder & >(),
+                                                 BRICK_FORCE( std::declval< vals_t >() ) ), ... )) )
+    {
+        string_builder builder;
+        std::exception_ptr eptr;
+
+        if ( trace()._use_buffer )
+        {
+            if ( trace().enabled( level, location ) )
+            {
+                trace()._buffer.rotate( 1024 * 1024, 2 * 1024 * 1024 );
+                trace()._buffer << trace_indent_buffer.data();
+                eptr = trace_format< fmt, level >( trace()._buffer, names, vals );
+                trace()._buffer << "\n";
+            }
+        }
+        else if ( trace().prepare( builder, level, location ) )
+        {
+            builder << trace_indent_buffer.data();
+            eptr = trace_format< fmt, level >( builder, names, vals );
+            trace().do_print( builder, level );
+        }
+
+        if ( eptr )
+            std::rethrow_exception( eptr );
+    }
+
+    inline void trace_clear() noexcept
+    {
+        char clrmsg = 0;
+        std::string_view divider(
+                "───────────────────────────────────────────────────────────────────────\n" );
+
+        if ( trace()._log_socket >= 0 )
+            write( trace()._log_socket, &clrmsg, 1 );
+        else if ( trace()._use_buffer )
+            trace()._buffer.clear();
+        else
+            ::write( 2, divider.data(), divider.size() );
+    }
+
+    inline void trace_dump( int fd ) noexcept
+    {
+        auto &buf = trace()._buffer;
+
+        const char *wptr = buf.buffer();
+        const char *eptr = wptr + buf.size();
+
+        while ( wptr < eptr )
+            if ( auto w = ::write( fd, wptr, eptr - wptr ); w > 0 )
+                wptr += w;
+            else
+                break;
+
+        buf.clear();
+    }
+
+#ifdef __unix__
+    inline struct ::sigaction trace_prevsig[ 32 ];
+    inline auto trace_siglist = { SIGINT, SIGQUIT, SIGILL, SIGABRT,
+                                  SIGFPE, SIGBUS, SIGSYS, SIGSEGV,
+                                  SIGTERM, SIGXCPU, SIGALRM, SIGVTALRM };
+
+    inline void trace_sighandler( int sig, siginfo_t *, void * )
+    {
+        trace_dump();
+        for ( auto s : trace_siglist )
+            sigaction( s, trace_prevsig + s, nullptr );
+        raise( sig );
+    }
+
+    inline void trace_sigaction() noexcept
+    {
+        static void *altstack = std::malloc( SIGSTKSZ );
+
+        ::stack_t st;
+        st.ss_sp = altstack;
+        st.ss_size = SIGSTKSZ;
+        st.ss_flags = 0;
+        sigaltstack( &st, NULL );
+
+        struct ::sigaction sa;
+        sa.sa_sigaction = trace_sighandler;
+        sa.sa_flags = SA_ONSTACK;
+        sigemptyset( &sa.sa_mask );
+
+        for ( auto sig : trace_siglist )
+            ::sigaction( sig, &sa, trace_prevsig + sig );
+    }
+#endif
+}
+
+// vim: syntax=cpp tabstop=4 shiftwidth=4 expandtab

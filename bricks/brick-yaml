@@ -1,0 +1,321 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * (c) 2017 Vladimír Štill
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+
+#ifdef DIVINE_RELAX_WARNINGS
+DIVINE_RELAX_WARNINGS
+#endif
+
+#include <llvm/Support/YAMLParser.h>
+#include <llvm/Support/YAMLTraits.h>
+
+#ifdef DIVINE_RELAX_WARNINGS
+DIVINE_UNRELAX_WARNINGS
+#endif
+
+#include <sstream>
+#include <deque>
+#include <type_traits>
+
+#include <brick-base64>
+#include <brick-string>
+
+namespace brick {
+namespace yaml {
+
+namespace lyaml = ::llvm::yaml;
+using ::llvm::dyn_cast;
+using ::llvm::cast;
+using ::llvm::isa;
+
+struct Parser
+{
+    using KeyList = std::deque< std::string >;
+
+    Parser( std::string data ) :
+        _data( std::move( data ) )
+    { }
+
+    template< typename T, typename Fail >
+    void getF( KeyList done, KeyList todo, Fail fail, T &result, lyaml::Node *node )
+    {
+        if ( todo.empty() )
+            return extractValue( result, node, fail );
+
+        auto key = todo.front();
+        todo.pop_front();
+        done.push_back( key );
+        ASSERT( node );
+
+        auto *map = dyn_cast< lyaml::MappingNode >( node );
+
+        if ( !map && key == "*" ) /* collect items from a sequence */
+        {
+            auto *seq = dyn_cast< lyaml::SequenceNode >( node );
+            if ( !seq )
+                return fail( result, "YAML error: not a sequence node", done, todo );
+            for ( auto &sub : *seq )
+                getF( done, todo, fail, result, &sub );
+            return;
+        }
+
+        if ( !map )
+            return fail( result, "YAML error: not an object node", done, todo );
+
+        bool found = false;
+
+        for ( auto &pair : *map )
+        {
+            if ( auto *skey = dyn_cast< lyaml::ScalarNode >( pair.getKey() ) )
+            {
+                ::llvm::SmallVector< char, 128 > storage;
+                auto ref = skey->getValue( storage );
+                if ( key == "*" && todo.empty() )
+                    extractValue( result, &pair, fail ), found = true;
+                else if ( ref == key || key == "*" )
+                    getF( done, todo, fail, result, pair.getValue() ), found = true;
+            }
+        }
+
+        if ( !found )
+            return fail( result, "YAML error: key not found: " + key, todo, done  );
+    }
+
+    template< typename T, typename Fail >
+    T getF( KeyList keys, Fail fail )
+    {
+        ::llvm::SourceMgr smgr;
+        lyaml::Stream input( _data, smgr );
+        T result;
+
+        if ( input.failed() )
+            return fail( result, "YAML input failed", keys, KeyList{} ), result;
+        // begin can be called only once
+        auto beg = input.begin(),
+             end = input.end();
+        if ( beg == end )
+            return fail( result, "YAML input empty", keys, KeyList{} ), result;
+
+        getF( {}, keys, fail, result, beg->getRoot() );
+        return result;
+    }
+
+    template< typename T >
+    T getOr( KeyList keys, T def )
+    {
+        return getF< T >( std::move( keys ), [&]( T &r, auto &&... ) { r = def; } );
+    }
+
+    template< typename T >
+    T get( KeyList keys )
+    {
+        return getF< T >( std::move( keys ),
+                          [&]( T &, const std::string &msg, KeyList next, KeyList seen )
+                          {
+                              std::stringstream ss;
+                              ss << msg << std::endl << "found key trace: ";
+                              for ( auto &k : seen )
+                                  ss << k << ", ";
+                              ss << std::endl << "remaining keys: ";
+                              for ( auto &k : next )
+                                  ss << k << ", ";
+                              throw std::runtime_error( ss.str() );
+                          } );
+    }
+
+    template< typename T >
+    void get( KeyList keys, T &result )
+    {
+        result = get< T >( keys );
+    }
+
+  private:
+
+    template< typename Fail >
+    void extractValue( std::string &str, lyaml::Node *node, Fail fail )
+    {
+        if ( auto kvnode = dyn_cast< lyaml::KeyValueNode >( node ) )
+        {
+            extractValue( str, kvnode->getKey(), fail );
+            return;
+        }
+
+        auto *scalar = dyn_cast< lyaml::ScalarNode >( node );
+        if ( !scalar )
+            return fail( str, "YAML error: expected scalar", KeyList{}, KeyList{} );
+
+        ::llvm::SmallVector< char, 128 > storage;
+        auto ref = scalar->getValue( storage );
+        if ( scalar->getVerbatimTag() == "tag:yaml.org,2002:binary" )
+            base64::decode( ref.begin(), ref.end(), std::back_inserter( str ) );
+        else
+            str = ref.str();
+    }
+
+    template< typename T, typename Fail >
+    auto extractValue( T &val, lyaml::Node *node, Fail fail )
+        -> decltype( brq::from_string( "", val ), void( 0 ) )
+    {
+        auto *scalar = dyn_cast< lyaml::ScalarNode >( node );
+        if ( !scalar )
+            return fail( val, "YAML error: expected scalar", KeyList{}, KeyList{} );
+
+        ::llvm::SmallVector< char, 128 > storage;
+        auto ref = scalar->getValue( storage );
+
+        if ( !brq::from_string( ref.str(), val ) )
+            return fail( val, "YAML conversion error from " + ref.str(), KeyList{}, KeyList{} );
+    }
+
+    using StringPair = std::pair< std::string, std::string >;
+
+    template< typename Fail >
+    void extractValue( StringPair &pair, lyaml::Node *node, Fail fail )
+    {
+        if ( auto kvnode = dyn_cast< lyaml::KeyValueNode >( node ) )
+        {
+            extractValue( pair.first, kvnode->getKey(), fail );
+            extractValue( pair.second, kvnode->getValue(), fail );
+        }
+        else
+            fail( pair, "YAML error: expected a key-value pair", KeyList{}, KeyList{} );
+    }
+
+    template< typename T, typename Fail >
+    void extractValue( std::vector< T > &vec, lyaml::Node *node, Fail fail )
+    {
+        vec.emplace_back();
+        extractValue( vec.back(), node, [&]( auto &, auto&&... args ) { fail( vec, args... ); } );
+    }
+
+    std::string _data;
+};
+
+} // namespace yaml
+
+namespace t_yaml
+{
+
+struct TestParse
+{
+    TEST(simple)
+    {
+        yaml::Parser y( "key: value\nanother: 2" );
+        ASSERT_EQ( y.get< std::string >( { "key" } ), "value" );
+        ASSERT_EQ( y.get< int >( { "another" } ), 2 );
+    }
+
+    TEST(nested)
+    {
+        yaml::Parser y( "key:\n  nested: value\n  another: 2" );
+        ASSERT_EQ( y.get< std::string >( { "key", "nested" } ), "value" );
+        ASSERT_EQ( y.get< int >( { "key", "another" } ), 2 );
+    }
+
+    TEST(list)
+    {
+        yaml::Parser y( "- item 1\n- item 2" );
+        auto vec = y.get< std::vector< std::string > >( { "*" } );
+        ASSERT_EQ( vec.size(), 2 );
+        ASSERT_EQ( vec[ 0 ], "item 1" );
+        ASSERT_EQ( vec[ 1 ], "item 2" );
+    }
+
+    TEST(nested_list)
+    {
+        yaml::Parser y( "- [ 1, 2 ] \n- [ 3, 4 ]" );
+        auto vec = y.get< std::vector< int > >( { "*", "*" } );
+        ASSERT_EQ( vec.size(), 4 );
+        ASSERT( vec == decltype( vec ){ 1, 2, 3, 4 } );
+    }
+
+    TEST(list_of_maps)
+    {
+        yaml::Parser y( "- item: 1\n- item: 2" );
+        auto vec = y.get< std::vector< int > >( { "*", "item" } );
+        ASSERT_EQ( vec.size(), 2 );
+        ASSERT_EQ( vec[ 0 ], 1 );
+        ASSERT_EQ( vec[ 1 ], 2 );
+    }
+
+    TEST(map_of_maps)
+    {
+        yaml::Parser y( "a:\n  item: 1\nb:\n  item: 2" );
+        auto vec = y.get< std::vector< int > >( { "*", "item" } );
+        ASSERT_EQ( vec.size(), 2 );
+        ASSERT_EQ( vec[ 0 ], 1 );
+        ASSERT_EQ( vec[ 1 ], 2 );
+    }
+
+    TEST(map_keys)
+    {
+        yaml::Parser y( "foo: a\nbar: b" );
+        auto vec = y.get< std::vector< std::string > >( { "*" } );
+        ASSERT_EQ( vec.size(), 2 );
+        ASSERT_EQ( vec[ 0 ], "foo" );
+        ASSERT_EQ( vec[ 1 ], "bar" );
+    }
+
+    TEST(list_of_maps_2)
+    {
+        yaml::Parser y( "- item: 1\n  foo: 2\n- item: 2\n  foo: 1" );
+        auto vec = y.get< std::vector< int > >( { "*", "foo" } );
+        ASSERT_EQ( vec.size(), 2 );
+        ASSERT_EQ( vec[ 0 ], 2 );
+        ASSERT_EQ( vec[ 1 ], 1 );
+    }
+
+    TEST(map_glob)
+    {
+        yaml::Parser y( "foo: a\nbar: b" );
+        auto vec = y.get< std::vector< std::pair< std::string, std::string > > >( { "*" } );
+        ASSERT_EQ( vec.size(), 2 );
+        ASSERT_EQ( vec[ 0 ].first, "foo" );
+        ASSERT_EQ( vec[ 0 ].second, "a" );
+        ASSERT_EQ( vec[ 1 ].first, "bar" );
+        ASSERT_EQ( vec[ 1 ].second, "b" );
+    }
+
+    TEST(binary)
+    {
+        yaml::Parser y( "fluff: !!binary Zmx1ZmY=\nfoo: !!binary Zm9v\nfuzz: !!binary ZnV6eg==" );
+        ASSERT_EQ( y.get< std::string >( { "foo" } ), "foo" );
+        ASSERT_EQ( y.get< std::string >( { "fuzz" } ), "fuzz" );
+        ASSERT_EQ( y.get< std::string >( { "fluff" } ), "fluff" );
+    }
+
+    TEST(bad_binary)
+    {
+        int ok = 0;
+        yaml::Parser y( "fluff: !!binary Zmx1ZmY==\nfoo: !!binary Zm9v=\n"
+                        "fuzz: !!binary ZnV6eg\nbuzz: !!binary YnV6eg===" );
+        try { y.get< std::string >( { "foo" } ); } catch (...) { ok ++; };
+        try { y.get< std::string >( { "fluff" } ); } catch (...) { ok ++; };
+        try { y.get< std::string >( { "fuzz" } ); } catch (...) { ok ++; };
+        try { y.get< std::string >( { "buzz" } ); } catch (...) { ok ++; };
+        ASSERT_EQ( ok, 4 );
+    }
+
+};
+
+}
+
+} // namespace brick
+
+// vim: syntax=cpp tabstop=4 shiftwidth=4 expandtab ft=cpp

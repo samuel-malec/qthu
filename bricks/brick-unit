@@ -1,0 +1,141 @@
+/*
+ * (c) 2022 Petr Ročkai <code@fixp.eu>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+#include "brick-assert"
+#include "brick-string"
+#include <string_view>
+#include <list>
+#include <memory>
+
+namespace brq
+{
+    struct test_summary
+    {
+        int total = 0, failed = 0;
+
+        ~test_summary()
+        {
+            if ( failed )
+                abort();
+        }
+    };
+
+    struct test_fixture_base
+    {
+        virtual void save() = 0;
+        virtual void reset() = 0;
+    protected:
+        ~test_fixture_base() = default;
+    };
+
+    using test_fixtures_t = std::list< test_fixture_base * >;
+    static inline test_fixtures_t test_fixtures;
+
+    template< typename fixture_t >
+    struct test_fixture : test_fixture_base
+    {
+        std::shared_ptr< fixture_t > fixture;
+        std::unique_ptr< fixture_t > backup;
+        test_fixtures_t::iterator self;
+
+        template< typename... args_t >
+        test_fixture( args_t && ... args )
+            : fixture( new fixture_t( std::forward< args_t >( args )... ) ),
+              self( test_fixtures.insert( test_fixtures.end(), this ) )
+        {}
+
+        ~test_fixture()
+        {
+            if ( self != test_fixtures.end() )
+                test_fixtures.erase( self );
+        }
+
+        void save()  override { backup.reset( new fixture_t( *fixture ) ); }
+        void reset() override { fixture = std::move( backup ); }
+
+        fixture_t *operator->() const { return  fixture.get(); }
+        fixture_t &operator*()  const { return *fixture; }
+
+    private:
+        struct copy_t {};
+        template< typename this_t > test_fixture( copy_t, this_t &&o )
+            : fixture( o.fixture ), self( test_fixtures.end() )
+        {}
+    public:
+        test_fixture( test_fixture &o )       : test_fixture( copy_t(), o ) {}
+        test_fixture( const test_fixture &o ) : test_fixture( copy_t(), o ) {}
+    };
+
+    struct test_case
+    {
+        std::string_view name;
+        test_case( std::string_view n = "unnamed" ) : name( n ) {}
+
+        bool was_throwing = false;
+
+        void setup()
+        {
+            was_throwing = singleton< assert_config >().throw_on_fail;
+            singleton< test_summary >().total ++;
+
+            if ( !was_throwing )
+                singleton< assert_config >().throw_on_fail = true;
+
+            for ( auto &f : test_fixtures )
+                f->save();
+        }
+
+        void cleanup()
+        {
+            singleton< assert_config >().throw_on_fail = was_throwing;
+
+            for ( auto &f : test_fixtures )
+                f->reset();
+        }
+
+        template< typename fun_t >
+        test_case &operator=( fun_t &&r )
+        {
+            setup();
+
+            try
+            {
+                r();
+                cleanup();
+                INFO( mark, name, pad( 30 ), "passed" );
+                return *this; // passed
+            }
+            catch ( std::exception &e )
+            {
+                ERROR( "uncaught exception", e.what() );
+            }
+            catch ( brq::assert_failed &f )
+            {
+                ERROR( f.what() );
+            }
+            catch ( ... )
+            {
+                ERROR( "uncaught exception, not derived from std::exception" );
+            }
+
+            singleton< test_summary >().failed ++;
+            cleanup();
+            INFO( mark, name, pad( 30 ), "failed" );
+            return *this;
+        }
+    };
+}

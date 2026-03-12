@@ -1,0 +1,57 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * Copyright (C) 2019 Petr Rockai <code@fixp.eu>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+#include "brick-sql-data"
+#include "brick-sql-exec"
+#include "brick-sql-expr"
+#include "brick-sql-stmt"
+
+namespace brq::sql
+{
+    template< typename stream, typename query >
+    inline auto operator<<( stream &s, const query &st )
+        -> std::enable_if_t< query::is_query, decltype( s << std::string() ) >
+    {
+        int id = 1;
+        return sql::print( s, st, id );
+    }
+
+    struct txn : txn_base
+    {
+        using txn_base::txn_base;
+
+        template< typename... ct, typename... et > [[nodiscard]]
+        sql::select< ct..., et... > select( et... e ) { open(); return { this, ct()..., e... }; }
+
+        template< typename... args > [[nodiscard]]
+        sql::select< args... > select_list( cons_list_t< args... > ) { open(); return { this }; }
+
+        template< typename table > [[nodiscard]]
+        insert< table > insert_into() { open(); return { this }; }
+
+        template< typename table > [[nodiscard]]
+        update< table > update() { open(); return { this }; }
+
+        template< typename table > [[nodiscard]]
+        delete_from< table > delete_from() { open(); return { this }; }
+    };
+
+    template< typename... Ts >
+    inline conn &query_head< Ts... >::conn() { return _txn->conn(); }
+}

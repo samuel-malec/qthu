@@ -1,0 +1,324 @@
+/*
+ * (c) 2018 Henrich Lauko
+ * (c) 2014-2018 Vladimír Štill
+ * (c) 2014, 2015, 2022 Petr Ročkai
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE. */
+
+#pragma once
+
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/Intrinsics.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/Bitcode/BitcodeReader.h>
+#include <llvm/Object/IRObjectFile.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/raw_ostream.h>
+#include <llvm/Support/raw_os_ostream.h>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/IR/AbstractCallSite.h>
+
+#include <memory>
+
+#include <brick-assert>
+#include <brick-string>
+#include <brick-types>
+#include <brick-fs>
+
+namespace brq
+{
+
+template< typename T >
+using get_operand_t = decltype( std::declval<T&>().getOperand( std::declval< int >() ) );
+
+template< typename value_t >
+struct llvm_transform
+{
+    using value_type = std::conditional_t< std::is_pointer_v< value_t >, value_t, value_t * >;
+
+    constexpr llvm_transform( const value_type &val ) : state( val ) {}
+    constexpr llvm_transform( value_type &&val ) : state( std::move( val ) ) {}
+
+    template< typename fun_t >
+    constexpr decltype( auto ) apply( fun_t f ) noexcept
+    {
+        using result_t = decltype( f( state ) );
+
+        if ( state )
+            return llvm_transform< result_t >( f( state ) );
+        else
+            return llvm_transform< result_t >( nullptr );
+    }
+
+    constexpr decltype( auto ) operand( size_t idx ) noexcept
+    {
+        if constexpr ( brick::types::is_detected_v< get_operand_t, std::remove_pointer_t< value_t > > )
+            return apply( [idx] ( const auto& v ) { return v->getOperand( idx ); } );
+        else
+            return llvm_transform< value_type >( nullptr );
+    }
+
+    template< typename T >
+    constexpr decltype( auto ) cast() noexcept
+    {
+        return apply( [] ( const auto& v ) { return ::llvm::dyn_cast< T >( v ); } );
+    }
+
+    constexpr value_type freeze() noexcept { return state; }
+
+private:
+    value_type state;
+};
+
+template< typename value_t >
+llvm_transform( value_t val ) -> llvm_transform< value_t >;
+
+struct llvm_annotation : brick::types::Eq
+{
+    llvm_annotation() = default;
+
+    explicit llvm_annotation( std::string_view anno )
+    {
+        size_t oldoff = 0, off = 0;
+
+        do {
+            off = anno.find( '.', oldoff );
+            _parts.emplace_back( anno.substr( oldoff, off - oldoff ) );
+            oldoff = off + 1;
+        } while ( off != std::string::npos );
+    }
+
+    template< typename iter_t >
+    llvm_annotation( iter_t begin, iter_t end ) : _parts( begin, end ) {}
+
+    std::string name() const { return _parts.back(); }
+    llvm_annotation ns() const { return llvm_annotation( _parts.begin(), _parts.end() - 1 ); }
+
+    std::string to_string() const
+    {
+        brq::string_builder ss;
+        for ( auto &n : _parts )
+            ss << n << ".";
+        return std::string( ss.data(), 0, ss.data().size() - 1 );
+    }
+
+    bool in_namespace( llvm_annotation ns ) const
+    {
+        return ns._parts.size() < _parts.size()
+            && std::equal( ns._parts.begin(), ns._parts.end(), _parts.begin() );
+    }
+
+    llvm_annotation drop_namespace( llvm_annotation ns ) const
+    {
+        return in_namespace( ns )
+             ? llvm_annotation( _parts.begin() + ns.size(), _parts.end() )
+             : *this;
+    }
+
+    size_t size() const { return _parts.size(); }
+
+    bool operator==( const llvm_annotation &o ) const
+    {
+        return o.size() == size() && std::equal( _parts.begin(), _parts.end(), o._parts.begin() );
+    }
+
+private:
+    std::vector< std::string > _parts;
+};
+
+template< typename source_t = llvm::Module *, typename view_t = brq::unit >
+struct llvm_enumerate
+{
+    static_assert( !std::is_same_v< source_t, llvm::Module * > ||
+                    std::is_same_v< view_t, brq::unit > );
+    source_t src;
+    view_t view;
+
+    llvm_enumerate( const source_t &src ) : src( src ) {}
+    llvm_enumerate( const source_t &src, const view_t &view ) : src( src ), view( view ) {}
+
+    template< typename yield_t >
+    void operator>>( yield_t &&yield )
+    {
+        if constexpr ( std::is_same_v< source_t, llvm::Module * > )
+            fetch( yield );
+        else
+            src >> [&]( auto... xs ) { view( xs..., yield ); };
+    }
+
+    template< typename yield_t >
+    void fetch( yield_t &&yield )
+    {
+        static_assert( std::is_same_v< source_t, llvm::Module * > );
+        const auto annos = src->getNamedGlobal( "llvm.global.annotations" );
+        auto arr = llvm_transform( annos ).operand( 0 ).template cast< llvm::ConstantArray >().freeze();
+
+        if ( arr )
+            for ( const auto &op : arr->operands() )
+            {
+                auto cs = llvm_transform( op.get() ).template cast< llvm::ConstantStruct >();
+                if ( auto val = cs.operand( 0 ).operand( 0 ).freeze() )
+                {
+                    auto anno = cs.operand( 1 ).operand( 0 )
+                               .template cast< llvm::GlobalVariable >().operand( 0 )
+                               .template cast< llvm::ConstantDataArray >()
+                               .freeze();
+                    yield( val, llvm_annotation( anno->getAsCString().str() ) );
+                }
+            }
+    }
+
+    template< typename add_view_t >
+    auto operator|( add_view_t av )
+    {
+        return brq::llvm_enumerate( *this, av );
+    }
+
+    template< typename value_t >
+    auto as()
+    {
+        return *this | []( auto val, auto anno, auto yield )
+        {
+            yield( llvm::cast< value_t >( val ), anno );
+        };
+    }
+
+    auto in_namespace( llvm_annotation ns )
+    {
+        return *this | [=]( const auto &val, llvm_annotation anno, auto yield )
+        {
+            if ( anno.in_namespace( ns ) )
+                yield( val, anno.drop_namespace( ns ) );
+        };
+    }
+
+    auto equal( llvm_annotation match )
+    {
+        return *this | [=]( const auto &val, llvm_annotation anno, auto yield )
+        {
+            if ( match == anno )
+                yield( val );
+        };
+    }
+
+    auto in_namespace( std::string_view ns ) { return in_namespace( llvm_annotation( ns ) ); }
+    auto equal( std::string_view anno ) { return equal( llvm_annotation( anno ) ); }
+    auto as_function() { return as< llvm::Function >(); }
+    auto functions( std::string_view anno ) { return as_function().equal( anno ); }
+};
+
+template< typename yield_t >
+void llvm_functions_by_attribute( const std::string& attr, ::llvm::Module &m, yield_t &&yield )
+{
+    for ( auto & fn : m )
+        if ( fn.hasFnAttribute( attr ) )
+            yield( fn );
+}
+
+inline void llvm_verify( llvm::Module *module )
+{
+    std::string err;
+    ::llvm::raw_string_ostream serr( err );
+
+    if ( llvm::verifyModule( *module, &serr ) )
+        throw std::runtime_error( "Invalid bitcode: " + serr.str() );
+}
+
+inline void llvm_throw( std::error_code ec )
+{
+    throw std::runtime_error( "LLVM Error: " + ec.message() );
+}
+
+inline void llvm_throw( ::llvm::Error &e )
+{
+    throw std::runtime_error( "LLVM Error: " + toString( std::move( e ) ) );
+}
+
+inline void llvm_throw( ::llvm::Error &&e )
+{
+    throw std::runtime_error( "LLVM Error: " + toString( std::move( e ) ) );
+}
+
+inline void llvm_write( llvm::Module *m, std::string path )
+{
+    llvm_verify( m );
+    std::error_code serr;
+    brq::create_file( path );
+    llvm::raw_fd_ostream fs( path.c_str(), serr, llvm::sys::fs::OF_None );
+    if ( serr )
+        llvm_throw( serr );
+    WriteBitcodeToFile( *m, fs );
+}
+
+inline std::unique_ptr< llvm::Module > llvm_read( const std::string &str, llvm::LLVMContext *ctx )
+{
+    std::unique_ptr< llvm::MemoryBuffer > input = std::move( llvm::MemoryBuffer::getFile( str ).get() );
+    auto bc_input = llvm::object::IRObjectFile::findBitcodeInMemBuffer( input->getMemBufferRef() );
+
+    if ( !bc_input )
+        UNREACHABLE( "Could not load bitcode file" );
+
+    if ( auto mod = ::llvm::parseBitcodeFile( bc_input.get(), *ctx ) )
+        return std::move( mod.get() );
+    else
+        UNREACHABLE( "Error parsing input model; probably not a valid bc file." );
+}
+
+inline std::string llvm_serialize( llvm::Module *m )
+{
+    std::string s;
+    llvm_verify( m );
+    {
+        ::llvm::raw_string_ostream fs( s );
+        WriteBitcodeToFile( *m, fs );
+    }
+    return s;
+}
+
+inline int llvm_intrinsic_id( llvm::Value *v )
+{
+    auto insn = llvm::dyn_cast< llvm::Instruction >( v );
+
+    if ( !insn || insn->getOpcode() != llvm::Instruction::Call )
+        return llvm::Intrinsic::not_intrinsic;
+
+    auto *CB = llvm::cast< llvm::CallBase >( insn );
+    auto f = CB->getCalledFunction();
+
+    if ( !f )
+        return llvm::Intrinsic::not_intrinsic;
+
+    return f->getIntrinsicID();
+}
+
+}
+
+namespace llvm
+{
+    template< typename stream, typename T >
+    auto operator<<( stream &o, const T &v )
+        -> std::enable_if_t< !std::is_convertible_v< stream &, raw_ostream & > &&
+                             !std::is_convertible_v< T, std::string >,
+                             decltype( v.print( std::declval< raw_ostream & >() ), o ) >
+    {
+        std::string s;
+        raw_string_ostream lstream( s );
+        lstream << v;
+        o << lstream.str();
+        return o;
+    }
+}

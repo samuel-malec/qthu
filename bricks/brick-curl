@@ -1,0 +1,185 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * Copyright (C) 2019 Petr Rockai <code@fixp.eu>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+#include <string_view>
+#include <curl/curl.h>
+
+namespace brq
+{
+    struct curl
+    {
+        CURL *_curl = nullptr;
+        CURLU *_url = nullptr;
+        curl_mime *_mime = nullptr;
+        brq::string_builder _data, _request;
+        int _response_code = 0;
+
+        curl()
+        {
+            _curl = curl_easy_init();
+            _mime = curl_mime_init( _curl );
+            curl_easy_setopt( _curl, CURLOPT_WRITEFUNCTION, _data_cb );
+            curl_easy_setopt( _curl, CURLOPT_WRITEDATA, this );
+        }
+
+        curl( curl &&o )
+        {
+            *this = std::move( o );
+        }
+
+        curl &operator=( curl &&o )
+        {
+            std::swap( _curl, o._curl );
+            std::swap( _mime, o._mime );
+            std::swap( _url, o._url );
+            _data = std::move( o._data );
+            _response_code = o._response_code;
+
+            return *this;
+        }
+
+        curl( const curl & ) = delete;
+        curl &operator=( const curl & ) = delete;
+
+        ~curl()
+        {
+            curl_url_cleanup( _url );
+            curl_easy_cleanup( _curl );
+            curl_mime_free( _mime );
+        }
+
+        std::string_view data() { return _data.data(); }
+
+        static size_t _data_cb( char *ptr, size_t, size_t nmemb, void *instance )
+        {
+            curl *i = static_cast< curl * >( instance );
+            i->check_code();
+            i->_data << std::string_view( ptr, nmemb );
+            return nmemb;
+        }
+
+        curl &add_mime( std::string_view n, std::string_view d )
+        {
+            TRACE( "add_mime", n, d );
+            curl_easy_setopt( _curl, CURLOPT_MIMEPOST, _mime );
+
+            auto part = curl_mime_addpart( _mime );
+            curl_mime_name( part, std::string( n ).c_str() );
+            curl_mime_data( part, d.begin(), d.size() );
+            _request << "mime: " << n << "=" << d.substr( 0, 70 );
+            if ( d.size() > 70 )
+                _request << "… " << d.size() << " bytes";
+            _request << "\n";
+            return *this;
+        }
+
+        curl &add_file( std::string_view n, std::string_view fn, std::string_view d )
+        {
+            TRACE( "add_file", n, fn, d );
+            curl_easy_setopt( _curl, CURLOPT_MIMEPOST, _mime );
+
+            auto part = curl_mime_addpart( _mime );
+            curl_mime_name( part, std::string( n ).c_str() );
+            curl_mime_filename( part, std::string( fn ).c_str() );
+            curl_mime_data( part, d.begin(), d.size() );
+            _request << "file: " << n << "=" << fn << ", " << d.size() << "bytes\n";
+            return *this;
+        }
+
+        curl &add_arg( std::string_view n, std::string_view d )
+        {
+            TRACE( "add_arg", n, d );
+            brq::string_builder b;
+            b << n << "=" << d;
+            curl_url_set( _url, CURLUPART_QUERY, b.buffer(), CURLU_APPENDQUERY | CURLU_URLENCODE );
+            _request << "arg: " << n << "=" << d << "\n";
+            return *this;
+        }
+
+        curl &set_url( std::string_view url )
+        {
+            _request << "url: " << url << "\n";
+            TRACE( "set_url", url);
+            _url = curl_url();
+            curl_url_set( _url, CURLUPART_URL, std::string( url ).c_str(), 0 );
+            return *this;
+        }
+
+        curl &set_ua( std::string_view ua )
+        {
+            TRACE( "set_ua", ua );
+            curl_easy_setopt( _curl, CURLOPT_USERAGENT, std::string( ua ).c_str() );
+            return *this;
+        }
+
+        curl &set_auth( std::string_view user, std::string_view pass )
+        {
+            TRACE( "set_auth", user, pass );
+            curl_easy_setopt( _curl, CURLOPT_USERNAME, std::string( user ).c_str() );
+            curl_easy_setopt( _curl, CURLOPT_PASSWORD, std::string( pass ).c_str() );
+            return *this;
+        }
+
+        using string = std::string;
+
+        template< typename T > T info( CURLINFO i )
+        {
+            std::conditional_t< std::is_same_v< T, string >, const char *, T > v;
+            curl_easy_getinfo( _curl, i, &v );
+            return v;
+        }
+
+        struct error : std::runtime_error
+        {
+            int code, curl;
+            error( int co, int cu, const char *w ) : std::runtime_error( w ), code( co ), curl( cu ) {}
+        };
+
+        void check_code( bool raise = true )
+        {
+            if ( _response_code )
+                return;
+
+            auto code = _response_code = info< long >( CURLINFO_RESPONSE_CODE );
+
+            if ( raise && code != 200 )
+                brq::raise< brq::curl::error >( code, 0 ) << "unexpected server response code " << code;
+        }
+
+        curl &run()
+        {
+            char *url;
+            curl_url_get( _url, CURLUPART_URL, &url, 0 );
+            DEBUG( "request", brq::unquoted( _request ) );
+
+            curl_easy_setopt( _curl, CURLOPT_CURLU, _url );
+            _response_code = 0;
+
+            if ( auto err = curl_easy_perform( _curl ) )
+                brq::raise< error >( 0, err ) << "curl error: " << curl_easy_strerror( err );
+
+            DEBUG( "done", info< long >( CURLINFO_RESPONSE_CODE ),
+                           info< string >( CURLINFO_CONTENT_TYPE ),
+                   "took", info< double >( CURLINFO_TOTAL_TIME ), "seconds" );
+
+            check_code();
+            return *this;
+        }
+    };
+}

@@ -1,0 +1,685 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * Copyright (C) 2019 Petr Rockai <code@fixp.eu>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+#include "brick-string"
+#include "brick-cons"
+#include "brick-fs"
+#include "brick-except"
+
+#include <string>
+#include <map>
+#include <iostream>
+#include <cxxabi.h>
+
+namespace brq
+{
+    /* The `cmd_flag` class represents an 'implicit' boolean flag. The value is
+     * set based on the presence of the flag alone. It is possible to set up a
+     * negated version of the flag by using neg() on an instance (the presence
+     * of the corresponding command line option will set the flag to false). In
+     * contrast, `bool` values lead to flags of the form `--flag {bool}`, i.e.
+     * the user will need to explicitly say `--flag yes` or `--flag no`. */
+
+    struct cmd_flag
+    {
+        struct neg_t
+        {
+            cmd_flag &f;
+            void operator=( bool b ) { f._value = !b; }
+        };
+
+        bool _value;
+
+        cmd_flag( bool v = false ) : _value( v ) {}
+        operator bool()   const { return  _value; }
+        bool operator !() const { return !_value; }
+        cmd_flag &operator=( bool b ) { _value = b; return *this; }
+        neg_t neg() { return { *this }; }
+    };
+
+    /* A file or directory that must already exist and be readable. */
+    struct cmd_file
+    {
+        std::string name;
+        static std::array< std::string, 1 > names() { return { "file" }; }
+        static parse_result from_string( std::string_view s, cmd_file &f )
+        {
+            if ( !file_exists( s ) )
+                return no_parse( "file ", s, " does not exist" );
+            if ( !file_access( s, R_OK ) )
+                return no_parse( "file ", s, " is not readable" );
+            f.name = s;
+            return {};
+        }
+
+        bool valid() const { return !name.empty(); }
+        explicit operator bool() const { return valid(); }
+    };
+
+    /* A file or directory path which may or may not exist. */
+    struct cmd_path
+    {
+        std::string name;
+        static std::array< std::string, 1 > names() { return { "path" }; }
+        static parse_result from_string( std::string_view s, cmd_path &f )
+        {
+            f.name = s;
+            return {};
+        }
+
+        explicit operator bool() const { return !name.empty(); }
+    };
+
+    inline parse_result from_string( std::string_view s, cmd_flag &f )
+    {
+        return from_string( s, f._value );
+    }
+
+    /* The `cmd_option_matcher` class takes care of matching up fragments of a
+     * single option or flag. A single option can span several tokens (where
+     * each token corresponds to a single command-line argument as passed to the
+     * program by the shell). Options are created by the `cmd_options` class
+     * defined below. The option definition consists of a number of fragments,
+     * where a fragment may or may not consume an entire token. Each fragment is
+     * either a literal (which is compared to the input token for a match) or a
+     * binding, which uses `from_string` to convert the token (or a token
+     * fragment) into a value. */
+
+    struct cmd_option_matcher
+    {
+        std::vector< std::string > _tokens;
+        bool _exact;
+
+        template< typename T > static constexpr bool is_binding =
+            ( std::is_lvalue_reference_v< T > && !std::is_const_v< std::remove_reference_t< T > > ) ||
+            std::is_same_v< T, cmd_flag::neg_t >;
+
+        template< typename arg_t >
+        std::tuple< parse_result, int, int > bind( arg_t &arg, int idx, int off )
+        {
+            if constexpr ( std::is_same_v< arg_t, cmd_flag > ||
+                           std::is_same_v< arg_t, cmd_flag::neg_t > )
+            {
+                arg = true;
+                return { parse_result(), idx, 0 };
+            }
+            else
+            {
+                if ( idx >= int( _tokens.size() ) )
+                    return { no_parse( "ran out of arguments" ), 0, 0 };
+
+                std::string token( _tokens[ idx ], off, std::string::npos );
+                return { from_string( token, arg ), idx + 1, 0 };
+            }
+        }
+
+        std::tuple< bool, int, int > compare( std::string pattern, int idx, int off )
+        {
+            if ( idx >= int( _tokens.size() ) )
+                return { false, 0, 0 };
+
+            std::string token( _tokens[ idx ], off, std::string::npos );
+
+            if ( _exact && pattern != token )
+                return { false, 0, 0 };
+            if ( !_exact && ( token == "-" || token == "--" ) )
+                return { false, 0, 0 };
+            if ( pattern.size() <= 2 && token.size() > pattern.size() ) // -o
+                return { brq::starts_with( token, pattern ), idx, off + pattern.size() };
+            if ( std::isalpha( pattern.back() ) || std::isblank( pattern.back() ) )
+                return { brq::starts_with( pattern, token ), idx + 1, 0 };
+            else
+                return { brq::starts_with( token, pattern ), idx, off + pattern.size() };
+        }
+
+        /* Process all the fragments (recursively). If there is a full match,
+         * return the index of the first unconsumed token, otherwise return 0.
+         * FIXME Partial matches (which ultimately fail) currently overwrite
+         * binding fragments in the matching prefix. This is undesirable. */
+
+        using match_result = std::pair< parse_result, int >;
+
+        match_result match( int idx, int off ) { return { parse_result(), off == 0 ? idx : 0 }; }
+
+        template< typename arg_t, typename... args_t >
+        match_result match( int idx, int off, arg_t &&a, args_t && ... args )
+        {
+            parse_result matched = no_parse();
+
+            if constexpr ( is_binding< arg_t > ) /* binding-type fragments */
+                std::tie( matched, idx, off ) = bind( a, idx, off );
+            else /* literal-type fragment, match it against the input token */
+                std::tie( matched, idx, off ) = compare( a, idx, off );
+
+            if ( matched )
+                return match( idx, off, std::forward< args_t >( args )... );
+            else
+                return { is_binding< arg_t > ? matched : parse_result(), 0 };
+        }
+    };
+
+    struct cmd_option_help : cmd_option_matcher /* format help for single options */
+    {
+        template< typename arg_t >
+        static std::array< std::string, 1 > names( brq::fallback, const char *b = "", const char *e = "" )
+        {
+            static std::string name;
+            if ( name.empty() )
+            {
+                int stat;
+                char *dem = abi::__cxa_demangle( typeid( arg_t ).name(), nullptr, nullptr, &stat );
+                if ( strchr( dem, '<' ) )
+                    *strchr( dem, '<' ) = 0;
+                name = strchr( dem, ':' ) ? strrchr( dem, ':' ) + 1 : dem;
+                if ( name == "basic_string" )
+                    name = "string";
+                std::free( dem );
+            }
+            return { b + name + e };
+        }
+
+        template< typename arg_t >
+        static auto names( primary_t, const char * = "", const char * = "" )
+            -> std::array< decltype( std::remove_reference_t< arg_t >::name() ), 1 >
+        {
+            return { std::remove_reference_t< arg_t >::name() };
+        }
+
+        template< typename arg_t >
+        static auto names( primary_t, const char * = "", const char * = "" )
+            -> decltype( std::remove_reference_t< arg_t >::names() )
+        {
+            return std::remove_reference_t< arg_t >::names();
+        }
+
+        static void opt_help( brq::string_builder &b ) { b << "\t"; }
+
+        template< typename arg_t, typename... args_t >
+        static void opt_help( brq::string_builder &b, arg_t &&arg, args_t && ... args )
+        {
+            if constexpr ( std::is_same_v< arg_t, cmd_flag & > );
+            else if constexpr ( is_binding< arg_t > )
+                b << names< arg_t >( brq::primary, "{", "}" )[ 0 ] << " ";
+            else
+            {
+                b << arg;
+                if ( std::isalpha( std::string_view( arg ).back() ) &&
+                     std::string_view( arg ).size() > 2 )
+                    b << " ";
+            }
+            opt_help( b, std::forward< args_t >( args )... );
+        }
+
+        template< typename arg_t >
+        static auto type_description( primary_t ) -> decltype( arg_t::help() )
+        {
+            return arg_t::help();
+        }
+
+        template< typename >
+        static std::string_view type_description( fallback ) { return ""; }
+
+        static void type_help( std::map< std::string, std::string > & ) {}
+
+        template< typename arg_t, typename... args_t >
+        static void type_help( std::map< std::string, std::string > &b, arg_t &&, args_t && ... args )
+        {
+            if constexpr ( is_binding< arg_t > && !std::is_same_v< arg_t, cmd_flag & > )
+            {
+                using type = std::remove_reference_t< arg_t >;
+                auto name = names< arg_t >( primary, "{", "}" )[ 0 ];
+                auto desc = type_description< type >( primary );
+                if ( desc != "" )
+                    b[ name ] = desc;
+            }
+            type_help( b, std::forward< args_t >( args )... );
+        }
+    };
+
+    /* This class implements the interface that the client uses to describe
+     * their CLI. Each user class which represents a command should have an
+     * `options` method that takes a reference to `cmd_options` as an argument,
+     * and calls its various methods to describe command-line options and flags.
+     * See `cmd_help` below for a rudimentary example, or the unit tests at the
+     * end of the file for a more involved one. */
+
+    struct cmd_options : protected cmd_option_help
+    {
+        enum { mode_opt_help, mode_pos_help, mode_opt_parse, mode_pos_parse } _mode;
+        bool _verbose = false;
+        bool _saw_section = false;
+        bool _print_help = false;
+        int _matches = 0;
+        int _index = 0, _next = 0;
+        int _pos = 0, _pos_matched = 0;
+        bool _pos_only = false;
+        std::map< std::string, std::string > _type_help;
+        brq::string_builder _error, _help, _pos_help;
+
+        template< typename... args_t >
+        void _opt_matched( int n, args_t && ... args )
+        {
+            _error << "\nmatched:\t";
+            for ( int i = _index; i < _index + n; ++i )
+                _error << ( i == _index ? "" : " " ) << _tokens[ i ];
+            _error << "\tas ";
+            opt_help( _error, std::forward< args_t >( args )... );
+            ++ _matches;
+            _next = _index + n;
+        }
+
+        void help( std::string pattern )
+        {
+            if ( _mode == mode_opt_parse && _tokens[ _index ] == pattern && !_pos_only )
+                _opt_matched( 1, pattern ), _print_help = true;
+        }
+
+        void final( std::string pattern )
+        {
+            if ( _mode == mode_opt_parse && _tokens[ _index ] == pattern && !_pos_only )
+                _opt_matched( 1, pattern ), _pos_only = true;
+        }
+
+        /* Declare a positional argument. Those are matched in the order in
+         * which pos() is called and are only tried if no opt() or flag() match
+         * the given argument. After a 'final' positional agrument is matched,
+         * everything that remains will be treated as positional arguments. */
+
+        template< typename type >
+        void pos( type &s, bool final = false )
+        {
+            if ( _pos++ != _pos_matched )
+                return;
+
+            if ( _mode == mode_pos_help )
+                _pos_help << " {" << names< type >( brq::primary )[ 0 ] << "}";
+
+            if ( _mode == mode_pos_parse )
+            {
+                if ( auto pr = from_string( _tokens[ _index ], s ) )
+                    _opt_matched( 1, s ), _pos_only = _pos_only || final;
+                else
+                    _error << "\n" << pr.error();
+            }
+        }
+
+        template< typename noncontainer, typename = void >
+        struct value_type_or
+        { using type = noncontainer; };
+
+        template< typename container >
+        struct value_type_or < container, std::void_t< typename container::value_type > >
+        { using type = typename container::value_type; };
+
+        template< typename type >
+        void collect( type &s )
+        {
+            using vt = typename value_type_or< type >::type ;
+            if ( _mode == mode_pos_help )
+                _pos_help << " {" << names< vt >( brq::primary )[ 0 ] << "}*";
+
+            if ( _pos != _pos_matched )
+                return;
+
+            if ( _mode == mode_pos_parse )
+            {
+                if ( auto pr = from_string( _tokens[ _index ], s ) )
+                    _opt_matched( 1, s );
+                else
+                    _error << "\n" << pr.error();
+            }
+        }
+
+        template< typename... args_t >
+        brq::string_builder &opt( args_t && ... args )
+        {
+            if ( _mode == mode_opt_help )
+            {
+                if ( !_saw_section )
+                    _help << "\n\nOPTIONS\n";
+
+                _saw_section = true;
+                _help << "\n  ";
+                opt_help( _help, std::forward< args_t >( args )... );
+                type_help( _type_help, std::forward< args_t >( args )... );
+            }
+
+            if ( _mode == mode_opt_parse && !_pos_only )
+            {
+                auto [ pr, m ] = match( _index, 0, std::forward< args_t >( args )... );
+                if ( m )
+                    _opt_matched( m - _index, args... );
+                else if ( !pr )
+                    _error << "\n" << pr.error();
+            }
+
+            return _help;
+        }
+
+        brq::string_builder &flag( const std::string &name, cmd_flag &f )
+        {
+            if ( _mode == mode_opt_help )
+                opt( "--[no-]" + name.substr( 2 ), f );
+
+            if ( _mode == mode_opt_parse )
+            {
+                opt( name, f );
+                opt( "--no-" + name.substr( 2 ), f.neg() );
+            }
+
+            return _help;
+        }
+
+        void section( std::string n )
+        {
+            if ( _mode == mode_opt_help )
+                _help << "\n\n" << n << "\n";
+            _saw_section = true;
+        }
+    };
+
+    struct cmd_base
+    {
+        virtual void run() = 0;
+        virtual void prepare() {}
+        virtual void options( cmd_options &o ) { o.help( "--help" ); }
+        virtual std::string_view help() { return ""; }
+        virtual ~cmd_base() {}
+    };
+
+    struct cmd_help : cmd_base
+    {
+        std::string _cmd;
+        std::string _help;
+        std::string _error;
+
+        void run() override
+        {
+            std::cerr << tabulate( _help );
+            if ( !_error.empty() )
+                raise() << _error;
+        }
+
+        void options( cmd_options &o ) override
+        {
+            o.collect( _cmd );
+        }
+
+        static std::array< std::string, 1 > names() { return { "help" }; }
+        cmd_help( std::string_view s = "", std::string_view err = "" ) : _help( s ), _error( err ) {}
+    };
+
+
+    template< typename cmd_t >
+    std::string cmd_name( cmd_t & ) { return cmd_option_help::names< cmd_t >( brq::primary )[ 0 ]; }
+
+    struct cmd_option_parser : protected cmd_options
+    {
+        std::string _argv_0;
+        std::string_view _cmd_help;
+
+        template< typename cmd_t >
+        string_builder &format_help( cmd_t &c, bool synopsis_only )
+        {
+            _mode = mode_pos_help;
+            _pos = 0;
+            _pos_help.clear();
+            _help._d.oom = true;
+            c.options( *this );
+            _help._d.oom = false;
+
+            if ( synopsis_only )
+                return _help << _argv_0 << " " << cmd_name( c ) << " [options]" << _pos_help.data();
+
+            _help << "\nSYNOPSIS\n\n";
+            _help << "  $ " << _argv_0 << " " << cmd_name( c ) << " [options]" << _pos_help.data();
+
+            if ( c.help().size() )
+            {
+                _help << "\n\nDESCRIPTION\n\n";
+                brq::string_transform{ quote( "  " ), _help } << c.help();
+            }
+
+            _mode = mode_opt_help;
+            _saw_section = false;
+            c.options( *this );
+            _help << "\n\n";
+            if ( !_type_help.empty() )
+                _help << "Argument Types\n\n";
+            for ( auto [ k, v ] : _type_help )
+                _help << "  {" << k << "}\t" << v << "\n";
+            return _help;
+        }
+
+        template< typename cmd_t >
+        std::conditional_t< std::is_same_v< cmd_t, cmd_help >, brq::ns< cmd_help, brq::nil >,
+                            typename brq::cons_list_t< cmd_t, cmd_help >::co > opt_parse()
+        {
+            cmd_t cmd;
+
+            _error.clear();
+            _error << "\nsynopsis:\t" << format_help( cmd, true ).data();
+            _error << "\ncommand:\t" << _argv_0;
+
+            for ( auto t : _tokens )
+                _error << " " << t;
+
+            _print_help = false;
+            _help.kill(); /* turn << into noops */
+            _pos_help.kill();
+            _pos_matched = 0;
+            _pos_only = false;
+
+            while ( _index < int( _tokens.size() ) )
+            {
+                _matches = 0;
+                _mode = mode_opt_parse;
+                _exact = true;
+                cmd.options( *this );
+
+                if ( _matches == 0 ) /* try partial matches */
+                {
+                    _exact = false;
+                    cmd.options( *this );
+                }
+
+                if ( _matches == 0 ) /* nope; try positional arguments */
+                {
+                    _mode = mode_pos_parse;
+                    _pos = 0;
+                    cmd.options( *this );
+                    if ( _matches && _pos_matched < _pos )
+                        _pos_matched ++;
+                }
+
+                if ( _matches == 0 )
+                    _error << "\nfailed to match '" << _tokens[ _index ] << "'";
+                if ( _matches > 1 )
+                    _error << "\nambiguous option";
+
+                if ( _matches != 1 )
+                    brq::raise() << "could not parse command" << tabulate( _error.data() );
+
+                _index = _next;
+            }
+
+            if ( _pos_matched != _pos && !_print_help )
+            {
+                _error << "\nsome positional arguments are missing";
+                brq::raise() << "could not parse command" << tabulate( _error.data() );
+            }
+
+            _help.clear();
+            _pos_help.clear();
+
+            if ( _print_help )
+                return cmd_help{ format_help( cmd, false ).data() };
+
+            return cmd;
+        }
+
+        cmd_option_parser( int argc, const char * const *argv, std::string_view help = "" )
+            : _argv_0( argv[ 0 ] ), _cmd_help( help )
+        {
+            std::copy( argv + 1, argv + argc, std::back_inserter( _tokens ) );
+        }
+
+        template< typename args_t >
+        cmd_option_parser( std::string_view argv_0, const args_t &args, std::string_view help = "" )
+            : _argv_0( argv_0 ), _cmd_help( help )
+        {
+            for ( auto it = args.begin(); it != args.end(); ++it )
+                _tokens.emplace_back( *it );
+        }
+    };
+
+    struct cmd_parser : protected cmd_option_parser
+    {
+        template< typename rv_t, typename cmds_t >
+        rv_t cmd_match()
+        {
+            if constexpr ( cmds_t::empty )
+            {
+                if ( _matches == 0 && !_exact )
+                    brq::raise() << "no match for command '" << _tokens.front() << "'";
+                if ( _matches > 1 )
+                    brq::raise() << "ambiguous command '" << _tokens.front() << "'";
+                return brq::nil();
+            }
+            else
+            {
+                using cmd_t = typename cmds_t::car_t;
+
+                bool match = false;
+                for ( auto n : names< cmd_t >( brq::primary ) )
+                {
+                    if ( _exact && n == _tokens.front() )
+                        match = true;
+                    if ( !_exact && brq::starts_with( n, _tokens.front() ) )
+                        match = true;
+                }
+
+                if ( match )
+                    ++ _matches;
+
+                TRACE( "tried", typeid( cmd_t ).name(), "matched", match );
+                auto rv = cmd_match< rv_t, typename cmds_t::cdr_t >();
+
+                if ( match )
+                {
+                    auto v = opt_parse< cmd_t >();
+                    if ( auto c = v.template get< cmd_t >() )
+                        return std::move( c->get() );
+                    else
+                        return v.template get< cmd_help >()->get();
+                }
+                else
+                    return rv;
+            }
+        }
+
+        template< typename... cmds_t >
+        cmd_help help_commands( cmd_help h = cmd_help() )
+        {
+            if ( !h._help.empty() )
+                return h;
+
+            cons_list_t< cmds_t... > cmds;
+            _help.clear();
+            _mode = mode_opt_help;
+            int matches = 0;
+
+            if ( h._cmd.empty() )
+                _help << "\nSYNOPSIS\n\n";
+
+            auto print = [&]( auto &c )
+            {
+                if ( h._cmd.empty() )
+                    _help << "  $ ", format_help( c, true ) << "\n";
+                else if ( brq::starts_with( cmd_name( c ), h._cmd ) )
+                    format_help( c, false ), ++ matches;
+            };
+
+            cmds.each( print );
+
+            if ( h._cmd.empty() && !_cmd_help.empty() )
+            {
+                _help << "\nDESCRIPTION\n\n";
+                brq::string_transform{ quote( "  " ), _help } << _cmd_help;
+                _help << "\n";
+            }
+
+            if ( h._cmd.empty() )
+                _help << "\n";
+
+            if ( !h._cmd.empty() && !matches )
+            {
+                help_commands< cmds_t... >();
+                return cmd_help( _help.data(), brq::format( "unknown command ", h._cmd ) );
+            }
+
+            return cmd_help( _help.data() );
+        }
+
+        template< typename... cmds_t >
+        typename brq::cons_list_t< cmds_t..., cmd_help >::co parse()
+        {
+            using list_t = typename brq::cons_list_t< cmds_t... , cmd_help >;
+            using rv_t = typename list_t::co;
+            rv_t rv = cmd_help();
+
+            auto update_help = [&]( cmd_help c )
+            {
+                if ( c._help.empty() )
+                    rv = help_commands< cmds_t... >( c );
+            };
+
+            if ( !_tokens.empty() )
+            {
+                _index = 1;
+                _matches = 0;
+                _exact = true;
+                rv = std::move( cmd_match< rv_t, list_t >() );
+                if ( !_matches )
+                {
+                    _exact = false;
+                    rv = std::move( cmd_match< rv_t, list_t >() );
+                }
+            }
+
+            rv.match( update_help );
+            return rv;
+        }
+
+        template< typename... cmds_t >
+        std::unique_ptr< cmd_base > get()
+        {
+            std::unique_ptr< cmd_base > rv;
+            auto move = [&]( auto &&c )
+            {
+                using type = std::remove_const_t< std::remove_reference_t< decltype( c ) > >;
+                rv.reset( new type( std::move( c ) ) );
+            };
+            parse< cmds_t... >().match( move );
+            return rv;
+        }
+
+        using cmd_option_parser::cmd_option_parser;
+    };
+}

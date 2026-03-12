@@ -1,0 +1,713 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * (c) 2019 Petr Ročkai <code@fixp.eu>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#pragma once
+#include "brick-assert"
+#include <tuple>
+#include <variant>
+#include <functional>
+#include <iomanip>
+#include <vector>
+#include <charconv>
+
+namespace brq
+{
+    [[gnu::pure]] static std::pair< char32_t, std::string_view >
+    decode_utf8( std::string_view f, bool report_partial = true )
+    {
+        auto get = [&]( int i ) -> uint8_t { return f[ i ]; };
+        uint32_t a = get( 0 ), b, c, d;
+        auto error = std::make_pair( a | 0xdc80, f.substr( 1 ) );
+        auto partial = std::make_pair( 0xffffu, f );
+
+        if ( a < 0x80 )
+            return { a, f.substr( 1 ) };
+
+        if ( a < 0xC2 )
+            return error;
+
+        if ( a < 0xE0 )
+        {
+            if ( f.size() < 2 )
+                return report_partial ? partial : error;
+
+            b = get( 1 );
+
+            if ( ( b & 0xC0 ) != 0x80 )
+                return error;
+
+            return { ( ( a & 0x1f ) << 6 ) | ( b & 0x3f ), f.substr( 2 ) };
+        }
+
+        if ( a < 0xF0 )
+        {
+            if ( f.size() < 3 )
+                return report_partial ? partial : error;
+
+            b = get( 1 ), c = get( 2 );
+
+            switch ( a )
+            {
+                case 0xE0: if ( ( b & 0xe0 ) != 0xa0 ) return error; else break;
+                case 0xED: if ( ( b & 0xe0 ) != 0x80 ) return error; else break;
+                default:   if ( ( b & 0xc0 ) != 0x80 ) return error; else break;
+            }
+
+            if ( ( c & 0xc0 ) != 0x80 )
+                return error;
+
+            return { ( ( a & 0x0f ) << 12 ) | ( ( b & 0x3f ) << 6 ) | ( c & 0x3f ), f.substr( 3 ) };
+        }
+
+        if ( a < 0xF5 )
+        {
+            if ( f.size() < 4 )
+                return report_partial ? partial : error;
+
+            b = get( 1 ), c = get( 2 ), d = get( 3 );
+
+            switch ( a )
+            {
+                case 0xF0: if ( b < 0x90 || b > 0xBF ) return error; else break;
+                case 0xF4: if ( ( b & 0xf0 ) != 0x80 ) return error; else break;
+                default:   if ( ( b & 0xc0 ) != 0x80 ) return error; else break;
+            }
+
+            if ( ( c & 0xc0 ) != 0x80 || ( d  & 0xc0 ) != 0x80 )
+                return error;
+
+            return { ( ( a & 0x07 ) << 18 ) | ( ( b & 0x3F ) << 12 ) |
+                     ( ( c & 0x3F ) << 6 )  | ( d & 0x3F ), f.substr( 4 ) };
+        }
+
+        return error;
+    }
+
+    template< typename val_t >
+    struct unquoted_ref
+    {
+        const val_t &ref;
+        unquoted_ref( val_t &r ) : ref( r ) {}
+
+        friend auto &operator<<( brq::string_builder &b, const unquoted_ref &r )
+        {
+            return b << r.ref;
+        }
+    };
+
+    template< typename val_t >
+    struct unquoted_val
+    {
+        val_t val;
+        unquoted_val( val_t v ) : val( std::move( v ) ) {}
+
+        friend auto &operator<<( brq::string_builder &b, const unquoted_val &v )
+        {
+            return b << v.val;
+        }
+    };
+
+    auto unquoted( auto &&rval )
+        requires std::is_rvalue_reference_v< decltype( rval ) >
+    {
+        return unquoted_val{ std::move( rval ) };
+    }
+
+    auto unquoted( const auto &ref )
+    {
+        return unquoted_ref{ ref };
+    }
+
+    template< typename val_t >
+    struct as_hex
+    {
+        val_t val;
+
+        as_hex( val_t v ) : val( v ) {}
+
+        friend auto &operator<<( brq::string_builder &b, const as_hex &v )
+        {
+            hex_guard _hex( b, true );
+            return b << v.val;
+        }
+    };
+
+    template<>
+    struct printable< std::vector< bool > >
+    {
+        const std::vector< bool > &val;
+        printable( const std::vector< bool> &v ) : val( v ) {}
+
+        friend auto &operator<<( string_builder &b, const printable &t ) noexcept
+        {
+            b << "⟨";
+            for ( bool bit : t.val )
+                b << ( bit ? '1' : '0' );
+            return b << "⟩";
+        }
+    };
+
+    template< typename... args_t >
+    struct printable< std::tuple< args_t... > >
+    {
+        using indices = std::index_sequence_for< args_t... >;
+        const std::tuple< args_t... > &tuple;
+        printable( const std::tuple< args_t... > &t ) : tuple( t ) {}
+
+        template< std::size_t... idx >
+        auto &print( std::index_sequence< idx... >, brq::string_builder &b ) const
+        {
+            int i = 0;
+            ( ( b << ( i++ ? ", " : "[ " ) << brq::printable{ std::get< idx >( tuple ) } ), ... );
+            return b << " ]";
+        }
+
+        friend auto &operator<<( brq::string_builder &b, const printable &a )
+        {
+            return a.print( indices(), b );
+        }
+    };
+
+    template< typename coll_t >
+    struct printable< coll_t, std::enable_if_t< !std::is_convertible_v< coll_t, std::string_view >,
+                                                std::void_t< typename coll_t::iterator > > >
+    {
+        const coll_t &col;
+        printable( const coll_t &c ) : col( c ) {}
+
+        friend auto &operator<<( brq::string_builder &b, const printable &a )
+        {
+            int i = 0;
+
+            if constexpr ( requires { a.col.size(); } )
+                for ( auto it = a.col.begin(); it != a.col.end(); ++it, ++i )
+                {
+                    if ( i < 16 )
+                        b << ( i ? ", " : "[ " ) << brq::printable( *it );
+                    else if ( i == 16 && a.col.size() > 24 )
+                        b << ", …";
+                    else if ( a.col.size() - i < 8 )
+                        b << ", " << brq::printable( *it );
+                }
+            else
+                return b << a.col;
+
+            return b << ( i ? " ]" : "[]" );
+        }
+    };
+
+    template< int i = 0, typename... args_t >
+    auto operator<<( string_builder &b, const std::tuple< args_t... > &t ) noexcept
+        -> decltype(( ( b << std::declval< args_t >() ) << ... ))
+    {
+        if ( i == 0 )
+            b << "[";
+        if constexpr ( i < sizeof...( args_t ) )
+        {
+            b << ( i > 0 ? ", " : " " ) << std::get< i >( t );
+            return operator<<< i + 1 >( b, t );
+        }
+        else
+            return b << ( i == 0 ? "]" : " ]" );
+    }
+
+    template< typename... T >
+    brq::string_builder &operator<<( string_builder &b, const std::variant< T... > &v ) noexcept
+    {
+        return std::visit( [&]( const auto &val ) -> auto & { return b << val; }, v );
+    }
+
+    template< typename A, typename B >
+    auto operator<<( string_builder &b, const std::pair< A, B > &p ) noexcept
+        -> decltype( b << p.first << p.second )
+    {
+        return b << "[ " << p.first << ", " << p.second << " ]";
+    }
+
+    inline string_builder &operator<<( string_builder &b, decltype( std::hex ) manip ) noexcept
+    {
+        if ( manip == std::hex )
+            b._d.hex = true;
+        if ( manip == std::dec )
+            b._d.hex = false;
+        return b;
+    }
+
+    struct mark_t
+    {
+        string_builder *b = nullptr;
+        int32_t mark = 0;
+
+        constexpr mark_t() = default;
+        explicit mark_t( string_builder &b ) : b( &b ), mark( b._d.offset ) {}
+        template< typename T > mark_t operator<<( T &&v ) { *b << std::forward< T >( v ); return *this; }
+        auto size() const { return b->size(); }
+
+        friend mark_t operator<<( string_builder &bld, mark_t ) { return mark_t( bld ); }
+    };
+
+    struct pad
+    {
+        mark_t mark;
+        int width;
+        char ch;
+        explicit pad( int w, char ch = ' ' ) : width( w ), ch( ch ) {}
+        pad( string_builder &b, pad p ) : mark( b ), width( p.width ), ch( p.ch ) {}
+
+        auto size() const { return mark.size(); }
+        template< typename T > pad operator<<( T &&v ) { mark << std::forward< T >( v ); return *this; }
+        static string_builder &write( string_builder &b, int width, int from, char ch, bool left )
+        {
+            int output_width = b._d.offset - from;
+            if ( int pad = width - output_width; pad > 0 && b._make_space( pad ) )
+            {
+                if ( left )
+                    std::memmove( b._d.buffer + from + pad, b._d.buffer + from, output_width + 1 );
+                else
+                    b._d.buffer[ b._d.offset + pad ] = 0;
+                std::memset( b._d.buffer + ( left ? from : b._d.offset ), ch, pad );
+                b._d.offset += pad;
+            }
+            return b;
+        }
+
+        friend pad operator<<( string_builder &bld, pad p ) { return pad( bld, p ); }
+    };
+
+    inline constexpr mark_t mark;
+
+    inline string_builder &operator<<( mark_t m, pad p )
+    {
+        return pad::write( *m.b, p.width, m.mark, p.ch, false );
+    }
+
+    inline string_builder &operator<<( pad p, mark_t )
+    {
+        return pad::write( *p.mark.b, p.width, p.mark.mark, p.ch, true );
+    }
+
+    template< typename transform_t, typename stream_t >
+    struct string_transform
+    {
+        using self_t = string_transform< transform_t, stream_t >;
+        transform_t _transform;
+        stream_t &_stream;
+        int _mark;
+
+        string_transform( transform_t t, stream_t &s )
+            : _transform( t ), _stream( s ), _mark( _stream.size() )
+        {}
+
+        int size() { return _stream.size(); }
+        int rewind( int x ) { return _stream.rewind( x ); }
+        const char *buffer() { return _stream.buffer(); }
+
+        template< typename T > auto process( const T &v, primary_t )
+            -> decltype( _transform.process( _stream, v ) )
+        {
+            return _transform.process( _stream, v );
+        }
+
+        template< typename T > auto process( const T &v, fallback )
+        {
+            int start = _stream.size();
+            _stream << v;
+            const size_t count = _stream.size() - start;
+            _stream.rewind( start );
+            char buf[ count ];
+            std::memcpy( buf, _stream.buffer() + start, count );
+            _transform.process( _stream, std::string_view( buf, count ) );
+        }
+
+        template< typename T > self_t &operator<<( const T &v )
+        {
+            if ( _mark != _stream.size() )
+                _transform.reset();
+            _mark = _stream.size();
+            process( v, primary );
+            return *this;
+        }
+    };
+
+    struct string_window
+    {
+        const char *_start;
+        int _split, _end;
+
+        string_window( std::string_view sv )
+            : _start( sv.data() ), _split( 0 ), _end( sv.end() - sv.begin() )
+        {}
+
+        string_window( const std::string &s ) : string_window( std::string_view( s ) ) {}
+
+        std::string_view flush( int drop = 0 )
+        {
+            std::string_view rv( _start, _split - drop );
+            _start += _split; _end -= _split; _split = 0;
+            return rv;
+        }
+
+        char shift()   { return _start[ _split++ ]; }
+        char peek()    { return _start[ _split ]; }
+        bool empty()   { return _split == _end; }
+        bool pending() { return _split > 0; }
+    };
+
+    template< typename gen_t, typename state_t > struct generator
+    {
+        using value_type = std::tuple_element_t< 0, std::invoke_result_t< gen_t, state_t > >;
+        gen_t _gen;
+        state_t _initial;
+
+        struct proxy
+        {
+            value_type v;
+            value_type *operator->() { return &v; }
+        };
+
+        struct iterator
+        {
+            using value_type = generator::value_type;
+            using difference_type = ssize_t;
+            using pointer = value_type *;
+            using reference = value_type &;
+            using iterator_category = std::input_iterator_tag;
+            gen_t _gen;
+            state_t _state;
+
+            iterator( gen_t g, state_t s ) : _gen( g ), _state( s ) {}
+            iterator &operator=( const iterator & ) = default;
+            iterator &operator++() { _state = std::get< 1 >( _gen( _state ) ); return *this; }
+            iterator operator++( int ) { auto x = *this; ++*this; return x; }
+            value_type operator*() { return std::get< 0 >( _gen( _state ) ); }
+            proxy operator->() { return { **this }; }
+            bool operator==( const iterator &o ) const { return _state == o._state; }
+            bool operator!=( const iterator &o ) const { return _state != o._state; }
+        };
+
+        auto begin() const { return iterator( _gen, _initial ); }
+        auto end()   const { return iterator( _gen, state_t() ); }
+
+        generator( gen_t gen, state_t init ) : _gen( gen ), _initial( init ) {}
+    };
+
+    inline auto splitter( std::string_view s, char d, bool reverse = false )
+    {
+        return generator( [=]( auto s ) { return split( s, d, reverse ); }, s );
+    }
+
+    inline auto splitter( std::u32string_view s, char32_t d, bool reverse = false )
+    {
+        return generator( [=]( auto s ) { return split( s, d, reverse ); }, s );
+    }
+
+    inline auto replace( std::string_view str, std::string_view find, std::string_view repl )
+    {
+        string_builder b;
+
+        while ( !str.empty() )
+        {
+            auto pos = str.find( find );
+            b << str.substr( 0, pos );
+            if ( pos != str.npos )
+            {
+                b << repl;
+                str.remove_prefix( pos + find.size() );
+            }
+            else
+                str = "";
+        }
+
+        return std::string( b.data() );
+    }
+
+    template< typename char_t >
+    std::basic_string< char_t > tabulate( std::basic_string_view< char_t > s )
+    {
+        std::vector< int > cols;
+        std::basic_string< char_t > out;
+
+        auto stop = [&]( int t, int c )
+        {
+            if ( t >= int( cols.size() ) )
+                cols.push_back( c );
+            else
+                cols[ t ] = std::max( c, cols[ t ] );
+        };
+
+        for ( auto line : splitter( s, '\n' ) )
+            for ( int i = 0, c = 0, t = 0; i < int( line.size() ); ++ i, ++ c )
+                if ( line[ i ] == '\t' )
+                    stop( t ++, c + 1 ), c = 0;
+
+        for ( auto line : splitter( s, '\n' ) )
+        {
+            for ( int i = 0, c = 0, t = 0; i < int( line.size() ); ++ i, ++ c )
+                if ( line[ i ] == '\t' )
+                {
+                    for ( ; c < cols[ t ]; ++ c )
+                        out += ' ';
+                    ++ t;
+                    c = 0;
+                }
+                else
+                    out += line[ i ];
+            out += '\n';
+        }
+
+        if ( !s.empty() && s.back() != '\n' )
+            out.pop_back();
+
+        return out;
+    }
+
+    inline std::string tabulate( std::string_view s ) { return tabulate< char >( s ); }
+    inline std::u32string tabulate( std::u32string_view s ) { return tabulate< char32_t >( s ); }
+
+    struct quote
+    {
+        std::string _prefix;
+        bool _delim = true;
+
+        void reset() { _delim = true; }
+        quote( std::string p ) : _prefix( p ) {}
+
+        std::string delim( bool next )
+        {
+            auto rv = _delim ? _prefix : "";
+            _delim = next;
+            return rv;
+        }
+
+        template< typename stream >
+        void process( stream &out, brq::string_window data )
+        {
+            while ( !data.empty() )
+                if ( data.shift() == '\n' )
+                    out << delim( true ) << data.flush();
+
+            if ( data.pending() )
+                out << delim( false ) << data.flush();
+        }
+    };
+
+    template< typename... args_t >
+    string_builder format( const args_t &... t )
+    {
+        string_builder rv;
+        format_args( "", rv, t... );
+        return rv;
+    }
+
+    struct parse_result
+    {
+        std::string _err_str;
+        bool _err = false;
+        explicit operator bool() const { return !_err; }
+        parse_result &operator=( bool b ) { _err = !b; _err_str.clear(); return *this; }
+        std::string_view error() const { ASSERT( _err ); return _err_str; }
+    };
+
+    template< typename... args_t >
+    parse_result no_parse( args_t... args )
+    {
+        parse_result r;
+        r._err = true;
+        r._err_str = brq::format( args... ).data();
+        return r;
+    }
+
+    /* The from_string machinery extracts values from strings. The parsing might
+     * fail, in which case they are expected to return 'false'. An existing
+     * value must be passed to `from_string` as a reference -- the original
+     * content may or may not be discarded, depending on the type. If parsing
+     * fails, the content of the value should be left untouched. The easiest way
+     * to provide from_string is by adding a static `from_string` method to your
+     * class. ADL also works, if need be. We provide some sane default
+     * from_string implementations for standard types. */
+
+    template< typename arg_t >
+    auto from_string( std::string_view s, arg_t &a ) -> decltype( arg_t::from_string( s, a ) )
+    {
+        return arg_t::from_string( s, a );
+    }
+
+    template< typename arg_t >
+    std::enable_if_t< std::is_integral_v< arg_t > || std::is_floating_point_v< arg_t >, parse_result >
+    from_string( std::string_view s, arg_t &a )
+    {
+        auto begin = s.data(), end = begin + s.size();
+        auto parse_end = std::from_chars( begin, end, a ).ptr;
+        return parse_end == end ? parse_result() : no_parse( "error parsing ", s, " as a number" );
+    }
+
+    inline parse_result from_string( std::string_view s, bool &f )
+    {
+        if ( s == "yes" || s == "true" || s == "1" )
+        {
+            f = true;
+            return {};
+        }
+
+        if ( s == "no" || s == "false" || s == "0" )
+        {
+            f = false;
+            return {};
+        }
+
+        return no_parse( "expected boolean but got '", s, "'" );
+    }
+
+    inline parse_result from_string( std::string_view s, std::string &v )
+    {
+        v = s;
+        return {};
+    }
+
+    inline parse_result from_string( std::string_view s, std::u32string &v )
+    {
+        v.clear();
+
+        while ( !s.empty() )
+        {
+            auto [ ch, next ] = brq::decode_utf8( s, false );
+            v += ch;
+            s = next;
+        }
+
+        return {};
+    }
+
+    template< typename container >
+    auto from_string( std::string_view s, container &c ) -> decltype( from_string( s, c.back() ) )
+    {
+        c.emplace_back();
+        return from_string( s, c.back() );
+    }
+
+    template< typename container > /* set-like things */
+    auto from_string( std::string_view s, container &c )
+        -> decltype( c.emplace(), from_string( s, std::declval< typename container::value_type & >() ) )
+    {
+        typename container::value_type val;
+        if ( auto rv = from_string( s, val ); !rv )
+            return rv;
+        c.insert( val );
+        return {};
+    }
+
+    inline std::string to_utf8( std::u32string_view us )
+    {
+        brq::string_builder b;
+        b << us;
+        return b.str();
+    }
+
+    inline std::u32string to_utf32( std::string_view s )
+    {
+        std::u32string res;
+        from_string( s, res );
+        return res;
+    }
+
+    struct c_str
+    {
+        const char *_data;
+        bool _owned = false;
+
+        c_str( const c_str & ) = delete;
+        c_str( c_str &&o )
+            : _data( o._data ), _owned( o._owned )
+        {
+            o._owned = false;
+        }
+
+        c_str &operator=( const c_str & ) = delete;
+        c_str &operator=( c_str && ) = delete;
+
+        explicit c_str( std::string_view sv )
+        {
+            if ( uintptr_t( sv.data() + sv.size() ) % 4096 == 0 || sv.end()[ 0 ] != 0 )
+            {
+                _owned = true;
+                char *data = new char[ sv.size() + 1 ];
+                std::copy( sv.begin(), sv.end(), data );
+                data[ sv.size() ] = 0;
+                _data = data;
+            }
+            else
+                _data = sv.data();
+        }
+
+        explicit c_str( const char *str )
+            : _data( str )
+        {}
+
+        operator const char*() const { return _data; }
+        const char *get() const { return _data; }
+
+        ~c_str()
+        {
+            if ( _owned )
+                delete[] _data;
+        }
+    };
+}
+
+namespace t_brq
+{
+    struct tabulate
+    {
+        TEST( sanity )
+        {
+            std::string_view in = "hello\tworld\nsad\tworld\n";
+            auto o = brq::tabulate( in );
+            ASSERT_EQ( o, "hello world\n"
+                          "sad   world\n" );
+        }
+
+        TEST( three )
+        {
+            std::string_view in = "hello\twar\tagain\nsad\tworld\tprevails\n";
+            auto o = brq::tabulate( in );
+            ASSERT_EQ( o, "hello war   again\n"
+                          "sad   world prevails\n" );
+        }
+    };
+
+    struct format
+    {
+        TEST( pad )
+        {
+            ASSERT_EQ( brq::format( std::hex, brq::pad( 4, '0' ), 16, brq::mark ).data(),
+                       "0010" );
+        }
+    };
+
+    struct replace
+    {
+        TEST( sanity )
+        {
+            ASSERT_EQ( brq::replace( "foobar", "o", "xx" ), "fxxxxbar" );
+            ASSERT_EQ( brq::replace( "foobar", "ar", "x" ), "foobx" );
+            ASSERT_EQ( brq::replace( "xx", "x", "xx" ), "xxxx" );
+        }
+    };
+}
+
+// vim: syntax=cpp tabstop=4 shiftwidth=4 expandtab ft=cpp

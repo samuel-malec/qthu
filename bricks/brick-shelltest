@@ -1,0 +1,1541 @@
+// -*- mode: C++; indent-tabs-mode: nil; c-basic-offset: 4 -*-
+
+/*
+ * This brick allows you to build a test runner for shell-based functional
+ * tests. It comes with fairly elaborate features (although most are only
+ * available on posix systems), geared toward difficult-to-test software.
+ *
+ * It provides a full-featured "main" function (brick::shelltest::run) that you
+ * can use as a drop-in shell test runner.
+ *
+ * Features include:
+ * - interactive and batch-mode execution
+ * - collects test results and test logs in a simple text-based format
+ * - measures resource use of individual tests
+ * - rugged: suited for running in monitored virtual machines
+ * - supports test flavouring
+ */
+
+/*
+ * (c) 2014-2019 Petr Ročkai <me@mornfall.net>
+ * (c) 2014 Red Hat, Inc.
+ * (c) 2015-2016 Vladimír Štill <xstill@fi.muni.cz>
+ */
+
+/* Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE. */
+
+#pragma once
+
+#include <fcntl.h>
+#include <limits.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <stdint.h>
+#include <errno.h>
+
+#include <vector>
+#include <map>
+#include <set>
+#include <deque>
+#include <string>
+#include <iostream>
+#include <iomanip>
+#include <fstream>
+#include <sstream>
+#include <cassert>
+#include <iterator>
+#include <algorithm>
+#include <stdexcept>
+#include <regex>
+
+#include <brick-string>
+#include <brick-fs>
+
+#if defined( __unix__ ) || defined( __APPLE__ )
+#include <dirent.h>
+#include <signal.h>
+#include <sys/stat.h>
+#include <sys/resource.h> /* rusage */
+#include <sys/select.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+#endif
+
+#ifdef __linux
+#include <sys/klog.h>
+#endif
+
+namespace brick {
+namespace shelltest {
+
+/* TODO: remove this section in favour of brick-filesystem.h */
+
+inline std::runtime_error syserr( std::string msg, std::string ctx = "" ) {
+    return std::runtime_error( std::string( strerror( errno ) ) + " " + msg + " " + ctx );
+}
+
+struct dir {
+    DIR *d;
+    dir( std::string p ) {
+        d = opendir( p.c_str() );
+        if ( !d )
+            throw syserr( "error opening directory", p );
+    }
+    ~dir() { closedir( d ); }
+};
+
+typedef std::vector< std::string > Listing;
+
+inline void fsync_name( std::string n )
+{
+    int fd = open( n.c_str(), O_WRONLY );
+    if ( fd >= 0 ) {
+        fsync( fd );
+        close( fd );
+    }
+}
+
+inline Listing listdir( std::string p, bool recurse = false, std::string prefix = "" )
+{
+    Listing r;
+
+    dir d( p );
+    struct dirent *entry = 0;
+
+    errno = 0;
+    while ( (entry = readdir( d.d )) != nullptr ) {
+        std::string ename( entry->d_name );
+
+        if ( ename == "." || ename == ".." )
+            continue;
+
+        if ( recurse ) {
+            struct stat stat;
+            std::string s = p + "/" + ename;
+            if ( ::stat( s.c_str(), &stat ) == -1 )
+                continue;
+            if ( S_ISDIR(stat.st_mode) ) {
+                Listing sl = listdir( s, true, prefix + ename + "/" );
+                for ( Listing::iterator i = sl.begin(); i != sl.end(); ++i )
+                    r.push_back( *i );
+            }
+            r.push_back( prefix + ename );
+        } else
+            r.push_back( ename );
+    };
+
+    if ( errno != 0 )
+        throw syserr( "error reading directory", p );
+
+    return r;
+}
+
+/* END remove this section */
+
+struct Journal {
+    enum R {
+        STARTED,
+        RETRIED,
+        UNKNOWN,
+        FAILED,
+        INTERRUPTED,
+        KNOWNFAIL,
+        PASSED,
+        SKIPPED,
+        TIMEOUT,
+        WARNED,
+    };
+
+    friend std::ostream &operator<<( std::ostream &o, R r ) {
+        switch ( r ) {
+            case STARTED: return o << "started";
+            case RETRIED: return o << "retried";
+            case FAILED: return o << "failed";
+            case INTERRUPTED: return o << "interrupted";
+            case PASSED: return o << "passed";
+            case SKIPPED: return o << "skipped";
+            case TIMEOUT: return o << "timeout";
+            case WARNED: return o << "warnings";
+            default: return o << "unknown";
+        }
+    }
+
+    friend std::istream &operator>>( std::istream &i, R &r ) {
+        std::string x;
+        i >> x;
+
+        r = UNKNOWN;
+        if ( x == "started" ) r = STARTED;
+        if ( x == "retried" ) r = RETRIED;
+        if ( x == "failed" ) r = FAILED;
+        if ( x == "interrupted" ) r = INTERRUPTED;
+        if ( x == "passed" ) r = PASSED;
+        if ( x == "skipped" ) r = SKIPPED;
+        if ( x == "timeout" ) r = TIMEOUT;
+        if ( x == "warnings" ) r = WARNED;
+        return i;
+    }
+
+    template< typename S, typename T >
+    friend std::istream &operator>>( std::istream &i, std::pair< S, T > &r ) {
+        return i >> r.first >> r.second;
+    }
+
+    typedef std::map< std::string, R > Status;
+    Status status, written;
+
+    std::string location, list;
+    int timeouts;
+
+    void append( std::string path ) {
+        std::ofstream of( path.c_str(), std::fstream::app );
+        Status::iterator writ;
+        for ( Status::iterator i = status.begin(); i != status.end(); ++i ) {
+            writ = written.find( i->first );
+            if ( writ == written.end() || writ->second != i->second )
+                of << i->first << " " << i->second << std::endl;
+        }
+        written = status;
+        of.close();
+    }
+
+    void write( std::string path ) {
+        std::ofstream of( path.c_str() );
+        for ( Status::iterator i = status.begin(); i != status.end(); ++i )
+            of << i->first << " " << i->second << std::endl;
+        of.close();
+    }
+
+    void sync() {
+        append( location );
+        fsync_name( location );
+        write ( list );
+        fsync_name( list );
+    }
+
+    void started( std::string n ) {
+        if ( status.count( n ) && status[ n ] == STARTED )
+            status[ n ] = RETRIED;
+        else
+            status[ n ] = STARTED;
+        sync();
+    }
+
+    void done( std::string n, R r ) {
+        status[ n ] = r;
+        if ( r == TIMEOUT )
+            ++ timeouts;
+        else
+            timeouts = 0;
+        sync();
+    }
+
+    bool done( std::string n )
+    {
+        if ( !status.count( n ) )
+            return false;
+        return status[ n ] != STARTED && status[ n ] != INTERRUPTED;
+    }
+
+    int count( R r )
+    {
+        int c = 0;
+        for ( Status::iterator i = status.begin(); i != status.end(); ++i )
+            if ( i->second == r )
+                ++ c;
+        return c;
+    }
+
+    void banner() {
+        std::cout << "### " << status.size() << " tests: "
+                  << count( PASSED ) << " passed, "
+                  << count( SKIPPED ) << " skipped, "
+                  << count( TIMEOUT ) + count( WARNED ) << " broken, "
+                  << count( FAILED ) << " failed" << std::endl;
+    }
+
+    void details() {
+        for ( Status::iterator i = status.begin(); i != status.end(); ++i )
+            if ( i->second != PASSED )
+                std::cout << i->second << ": " << i->first << std::endl;
+    }
+
+    void read( std::string n ) {
+        std::ifstream ifs( n.c_str() );
+        typedef std::istream_iterator< std::pair< std::string, R > > It;
+        for ( It i( ifs ); i != It(); ++i )
+            status[ i->first ] = i->second;
+    }
+
+    void read() { read( location ); }
+
+    Journal( std::string dir )
+        : location( dir + "/journal" ),
+          list( dir + "/list" ),
+          timeouts( 0 )
+    {}
+};
+
+struct TimedBuffer {
+    typedef std::pair< time_t, std::string > Line;
+
+    std::deque< Line > data;
+    Line incomplete;
+
+    Line shift( bool force = false ) {
+        Line result = std::make_pair( 0, "" );
+        if ( force && data.empty() )
+            std::swap( result, incomplete );
+        else {
+            result = data.front();
+            data.pop_front();
+        }
+        return result;
+    }
+
+    void push( std::string buf ) {
+        time_t now = time( 0 );
+        std::string::iterator b = buf.begin(), e = buf.begin();
+
+        while ( e != buf.end() )
+        {
+            e = std::find( b, buf.end(), '\n' );
+            incomplete.second += std::string( b, e );
+
+            if ( !incomplete.first )
+                incomplete.first = now;
+
+            if ( e != buf.end() ) {
+                incomplete.second += "\n";
+                data.push_back( incomplete );
+                incomplete = std::make_pair( now, "" );
+            }
+            b = (e == buf.end() ? e : e + 1);
+        }
+    }
+
+    bool empty( bool force = false ) {
+        if ( force && !incomplete.second.empty() )
+            return false;
+        return data.empty();
+    }
+};
+
+struct Sink {
+    virtual void outline( bool ) {}
+    virtual void push( std::string x ) = 0;
+    virtual void sync() {}
+    virtual ~Sink() {}
+};
+
+struct Substitute {
+    typedef std::map< std::string, std::string > Map;
+    Map _map;
+
+    std::string map( std::string line ) {
+        if ( std::string( line, 0, 9 ) == "@TESTDIR=" )
+            _map[ "@TESTDIR@" ] = std::string( line, 9, std::string::npos );
+        else if ( std::string( line, 0, 8 ) == "@PREFIX=" )
+            _map[ "@PREFIX@" ] = std::string( line, 8, std::string::npos );
+        else {
+            std::string::size_type off;
+            for ( const auto &s : _map )
+                while ( (off = line.find( s.first )) != std::string::npos )
+                    line.replace( off, s.first.length(), s.second );
+        }
+        return line;
+    }
+};
+
+struct Format {
+    time_t start;
+    bool stamp;
+    Substitute subst;
+
+    std::string format( TimedBuffer::Line l, bool suppress = false ) {
+        std::stringstream ts, result;
+        int rel = l.first - start;
+        ts << "[" << std::setw( 2 ) << std::setfill( ' ' ) << rel / 60
+           << ":" << std::setw( 2 ) << std::setfill( '0' ) << rel % 60 << "] ";
+        if ( stamp && !suppress )
+            result << ts.str();
+        for ( auto c : subst.map( l.second ) )
+            result << c << ( stamp && c == '\r' ? ts.str() : "" );
+        return result.str();
+    }
+
+    Format() : start( time( 0 ) ), stamp( true ) {}
+};
+
+struct BufSink : Sink {
+    TimedBuffer data;
+    Format fmt;
+
+    virtual void push( std::string x )
+    {
+        data.push( x );
+    }
+
+    void dump( std::ostream &o )
+    {
+        while ( !data.empty( true ) )
+            o << "| " << fmt.format( data.shift( true ) );
+    }
+};
+
+struct FdSink : Sink {
+    int fd;
+
+    TimedBuffer stream;
+    Format fmt;
+    bool killed, suppress;
+
+    virtual void outline( bool force )
+    {
+        TimedBuffer::Line line = stream.shift( force );
+        std::string out = fmt.format( line, suppress );
+        suppress = line.second.back() != '\n';
+        write( fd, out.c_str(), out.length() );
+    }
+
+    virtual void sync() {
+        if ( killed )
+            return;
+        while ( !stream.empty( true ) )
+            outline( true );
+    }
+
+    virtual void push( std::string x ) {
+        if ( !killed )
+            stream.push( x );
+    }
+
+    FdSink( int _fd ) : fd( _fd ), killed( false ), suppress( false ) {}
+};
+
+struct FileSink : FdSink {
+    std::string file;
+    FileSink( std::string n ) : FdSink( -1 ), file( n ) {}
+
+    void sync() {
+        if ( fd < 0 && !killed ) {
+            fd = open( file.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644 );
+            if ( fd < 0 )
+                killed = true;
+        }
+        FdSink::sync();
+    }
+
+    ~FileSink() {
+        if ( fd >= 0 ) {
+            fsync( fd );
+            close( fd );
+        }
+    }
+};
+
+#define BRICK_SYSLOG_ACTION_READ_CLEAR     4
+#define BRICK_SYSLOG_ACTION_CLEAR          5
+
+struct Source {
+    int fd;
+
+    virtual void sync( Sink *sink ) {
+        ssize_t sz;
+        char buf[ 128 * 1024 ];
+        while ( (sz = read(fd, buf, sizeof(buf) - 1)) > 0 )
+            sink->push( std::string( buf, sz ) );
+        if ( sz < 0 && errno != EAGAIN )
+            throw syserr( "reading pipe" );
+    }
+
+    virtual void reset() {}
+
+    virtual int fd_set( fd_set *set ) {
+        if ( fd >= 0 ) {
+            FD_SET( fd, set );
+            return fd;
+        } else
+            return -1;
+    }
+
+    Source( int fd = -1 ) : fd( fd ) {}
+    virtual ~Source() {
+        if ( fd >= 0 )
+            ::close( fd );
+    }
+};
+
+struct FileSource : Source {
+    std::string file;
+    FileSource( std::string n ) : Source( -1 ), file( n ) {}
+
+    int fd_set( ::fd_set * ) { return -1; } /* reading a file is always non-blocking */
+    void sync( Sink *s ) {
+        if ( fd < 0 ) {
+            fd = open( file.c_str(), O_RDONLY | O_CLOEXEC | O_NONBLOCK );
+            if ( fd >= 0 )
+                lseek( fd, 0, SEEK_END );
+        }
+        if ( fd >= 0 )
+            Source::sync( s );
+    }
+};
+
+struct KMsg : Source {
+    bool can_clear;
+
+    KMsg() : can_clear( true ) {}
+
+    bool dev_kmsg() {
+        return fd >= 0;
+    }
+
+    void reset() {
+#ifdef __linux
+        if ( dev_kmsg() ) {
+            if ( (fd = open("/dev/kmsg", O_RDONLY | O_NONBLOCK)) < 0 ) {
+                if (errno != ENOENT) /* Older kernels (<3.5) do not support /dev/kmsg */
+                    perror("opening /dev/kmsg");
+            } else if ( lseek(fd, 0L, SEEK_END) == off_t(-1) )
+                perror("lseek /dev/kmsg");
+        } else
+            if ( klogctl( BRICK_SYSLOG_ACTION_CLEAR, 0, 0 ) < 0 )
+                can_clear = false;
+#endif
+    }
+
+#ifdef __linux
+    void sync( Sink *s ) {
+        int sz;
+        char buf[ 128 * 1024 ];
+
+        if ( dev_kmsg() ) {
+            while ( (sz = ::read(fd, buf, sizeof(buf) - 1)) > 0 )
+                s->push( std::string( buf, sz ) );
+            if ( sz < 0 ) {
+                fd = -1;
+                sync( s );
+            }
+        } else if ( can_clear ) {
+            while ( (sz = klogctl( BRICK_SYSLOG_ACTION_READ_CLEAR, buf,
+                                   sizeof(buf) - 1 )) > 0 )
+                s->push( std::string( buf, sz ) );
+            if ( sz < 0 && errno == EPERM )
+                can_clear = false;
+        }
+    }
+#else
+    void sync( Sink * ) {}
+#endif
+};
+
+struct Observer : Sink {
+    Observer() {}
+    void push( std::string ) {}
+};
+
+struct IO : Sink {
+    typedef std::vector< Sink* > Sinks;
+    typedef std::vector< Source* > Sources;
+
+    mutable Sinks sinks;
+    mutable Sources sources;
+
+    Observer *_observer;
+
+    virtual void push( std::string x ) {
+        for ( Sinks::iterator i = sinks.begin(); i != sinks.end(); ++i )
+            (*i)->push( x );
+    }
+
+    void sync() {
+        for ( Sources::iterator i = sources.begin(); i != sources.end(); ++i )
+            (*i)->sync( this );
+
+        for ( Sinks::iterator i = sinks.begin(); i != sinks.end(); ++i )
+            (*i)->sync();
+    }
+
+    void close() {
+        for ( Sources::iterator i = sources.begin(); i != sources.end(); ++i )
+            delete *i;
+        sources.clear();
+    }
+
+    int fd_set( fd_set *set ) {
+        int max = -1;
+
+        for ( Sources::iterator i = sources.begin(); i != sources.end(); ++i )
+            max = std::max( (*i)->fd_set( set ), max );
+        return max + 1;
+    }
+
+    Observer &observer() { return *_observer; }
+
+    IO() {
+        sinks.push_back( _observer = new Observer );
+    }
+
+    /* a stealing copy constructor */
+    IO( const IO &io ) : sinks( io.sinks ), sources( io.sources )
+    {
+        io.sinks.clear();
+        io.sources.clear();
+    }
+
+    IO &operator= ( const IO &io ) {
+        this->~IO();
+        return *new (this) IO( io );
+    }
+
+    void clear() {
+        for ( Sinks::iterator i = sinks.begin(); i != sinks.end(); ++i )
+            delete *i;
+        sinks.clear();
+    }
+
+    ~IO() { close(); clear(); }
+
+};
+
+namespace {
+
+struct Id {
+    template< typename T >
+    const T &operator()( const T &x ) { return x; }
+};
+
+constexpr Id id{};
+
+template< typename O, typename Transform = Id >
+void split( std::string s, O o, Transform transform = id, char sep = ',' )
+{
+    std::stringstream ss( s );
+    std::string item;
+    while ( std::getline( ss, item, sep ) )
+        *o++ = transform( item );
+}
+
+int fatal_signal = 0;
+
+}
+
+using TagFilter = std::vector< std::vector< std::string > >;
+
+struct Flavour
+{
+    std::string name;
+    TagFilter filter;
+
+    Flavour( std::string str )
+    {
+        std::vector< std::string > s;
+        split( str, std::back_inserter( s ), id, ':' );
+        name = s[0];
+
+        for ( unsigned i = 1; i < s.size(); ++i )
+        {
+            filter.emplace_back();
+            split( s[i], std::back_inserter( filter.back() ) );
+        }
+    }
+};
+
+struct Options {
+    bool verbose, terse, batch, interactive, cont, fatal_timeouts, kmsg, rusage;
+    std::string testdir, outdir, workdir, heartbeat;
+    std::vector< Flavour > flavours;
+    std::vector< std::string > watch;
+    std::vector< std::regex > filter1, filter2, flavourFilter, exclude;
+    TagFilter tagsets;
+    std::vector< std::string > exclude_tags;
+    std::vector< std::pair< std::string, std::string > > interpreters, expand;
+    std::string flavour_envvar;
+    int timeout, total_timeout, jobs;
+    Options() : verbose( false ), terse( false ), batch( false ), interactive( false ),
+                cont( false ), fatal_timeouts( false ), kmsg( false ), rusage( false ),
+                timeout( 60 ), total_timeout( 3 * 3600 ), jobs( 1 )
+    {
+        exclude_tags.push_back( "skip" ); /* those are always excluded */
+    }
+};
+
+/* This class handles the actual execution of the test, either using bash, or
+   using the specified interpreter. */
+struct TestProcess
+{
+    std::string filename, interpreter;
+    bool interactive;
+    int fd;
+
+    void exec()
+    {
+        assert( fd >= 0 );
+        if ( !interactive ) {
+            int devnull = ::open( "/dev/null", O_RDONLY );
+            if ( devnull >= 0 ) { /* gcc really doesn't like to not have stdin */
+                dup2( devnull, STDIN_FILENO );
+                close( devnull );
+            } else
+                close( STDIN_FILENO );
+            dup2( fd, STDOUT_FILENO );
+            dup2( fd, STDERR_FILENO );
+            close( fd );
+        }
+
+        setpgid( 0, 0 );
+
+        if ( interpreter.empty() )
+            execlp( "bash", "bash", "-noprofile", "-norc", filename.c_str(), NULL );
+        else
+            execlp( "bash", "bash", "-noprofile", "-norc", interpreter.c_str(), filename.c_str(), NULL );
+        perror( "execlp" );
+        _exit( 202 );
+    }
+
+    TestProcess( std::string file, std::string interp )
+        : filename( file ), interpreter( interp ), interactive( false ), fd( -1 )
+    {}
+};
+
+struct TestCase
+{
+    TestProcess child;
+    std::string name, variant, flavour;
+    std::set< std::string > tags;
+    IO io;
+    BufSink *iobuf;
+
+    struct rusage usage;
+    int status, slot;
+    bool timeout, tty;
+    pid_t pid;
+
+    time_t start, end, silent_start, last_update, last_heartbeat;
+    Options options;
+
+    Journal *journal;
+
+    std::string pretty()
+    {
+        std::stringstream str;
+        if ( flavour != "vanilla" ) str << "[" << flavour << "] ";
+        str << name;
+        if ( !variant.empty() ) str << " " << variant;
+        return str.str();
+    }
+
+    std::string id() { return flavour + ":" + name + ( variant.empty() ? "" : ":" + variant ); }
+    std::ostream &progress() { return std::cerr; }
+
+    void pipe() {
+        int fds[2];
+
+        if (socketpair( PF_UNIX, SOCK_STREAM, 0, fds )) {
+            perror("socketpair");
+            exit(201);
+        }
+
+        if (fcntl( fds[0], F_SETFL, O_NONBLOCK ) == -1) {
+            perror("fcntl on socket");
+            exit(202);
+        }
+
+        io.sources.push_back( new Source( fds[0] ) );
+        child.fd = fds[1];
+        child.interactive = options.interactive;
+    }
+
+    bool monitor( int wait_msec )
+    {
+        end = time( 0 );
+
+        /* heartbeat */
+        if ( end - last_heartbeat >= 20 && !options.heartbeat.empty() ) {
+            std::ofstream hb( options.heartbeat.c_str(), std::fstream::app );
+            hb << ".";
+            hb.close();
+            fsync_name( options.heartbeat );
+            last_heartbeat = end;
+        }
+
+        if ( wait4(pid, &status, WNOHANG, &usage) != 0 )
+        {
+            io.sync();
+            return false;
+        }
+
+        /* kill off tests after a minute of silence */
+        if ( !options.interactive )
+            if ( end - silent_start > options.timeout ) {
+                ::kill( pid, SIGINT );
+                sleep( 5 ); /* wait a bit for a reaction */
+                if ( waitpid( pid, &status, WNOHANG ) == 0 )
+                {
+                    system( "echo t | tee /proc/sysrq-trigger > /dev/null 2>&1" );
+                    killpg( pid, SIGKILL );
+                    waitpid( pid, &status, 0 );
+                }
+                timeout = true;
+                io.sync();
+                return false;
+            }
+
+        struct timeval wait;
+        fd_set set;
+
+        FD_ZERO( &set );
+        int nfds = io.fd_set( &set );
+        wait.tv_sec = 0;
+        wait.tv_usec = wait_msec * 1000;
+
+        if ( select( nfds, &set, NULL, NULL, &wait ) > 0 )
+            silent_start = end; /* something happened */
+
+        io.sync();
+
+        return true;
+    }
+
+    std::string timefmt( time_t t )
+    {
+        std::stringstream ss;
+        ss << t / 60 << ":" << std::setw( 2 ) << std::setfill( '0' ) << t % 60;
+        return ss.str();
+    }
+
+    std::string rusage()
+    {
+        std::stringstream ss;
+        time_t wall = end - start, user = usage.ru_utime.tv_sec,
+             system = usage.ru_stime.tv_sec;
+        size_t rss = usage.ru_maxrss / 1024,
+               inb = usage.ru_inblock / 100,
+              outb = usage.ru_oublock / 100;
+
+        size_t inb_10 = inb % 10, outb_10 = outb % 10;
+        inb /= 10; outb /= 10;
+
+        ss << timefmt( wall ) << " wall " << timefmt( user ) << " user "
+           << timefmt( system ) << " sys   " << std::setw( 3 ) << rss << "M RSS | "
+           << "IOPS: " << std::setw( 5 ) << inb << "." << inb_10 << "K in "
+           << std::setw( 5 ) << outb << "." << outb_10 << "K out";
+        return ss.str();
+    }
+
+    std::string result( std::string n, std::string print = "" )
+    {
+        int pad = (12 - n.length());
+        return "### " + std::string( pad, ' ' ) + ( print.empty() ? n : print ) + ": ";
+    }
+
+    std::string result( Journal::R r )
+    {
+        std::stringstream s;
+        s << r;
+        return result( s.str(), colour( r ) );
+    }
+
+    std::string colour( Journal::R r )
+    {
+        std::stringstream rv;
+
+        if ( tty )
+        {
+            rv << "\033[";
+
+            switch ( r )
+            {
+                case Journal::PASSED: rv << "32m"; break;
+                case Journal::SKIPPED:
+                case Journal::WARNED: rv << "33m"; break;
+                case Journal::FAILED: rv << "31m"; break;
+                default: rv << "0m"; break;
+            }
+        }
+
+        rv << r;
+        if ( tty )
+            rv << "\033[0m";
+        return rv.str();
+    }
+
+    void parent()
+    {
+        ::close( child.fd );
+        setupIO();
+
+        journal->started( id() );
+        silent_start = start = time( 0 );
+    }
+
+    bool finished( int wait_msec )
+    {
+        if ( monitor( wait_msec ) )
+            return false;
+
+        Journal::R r = Journal::UNKNOWN;
+
+        if ( timeout ) {
+            r = Journal::TIMEOUT;
+        } else if ( WIFEXITED( status ) ) {
+            if ( WEXITSTATUS( status ) == 0 )
+                r = Journal::PASSED;
+            else if ( WEXITSTATUS( status ) == 200 )
+                r = Journal::SKIPPED;
+            else if ( WEXITSTATUS( status ) == 201 )
+                r = Journal::WARNED;
+            else if ( WEXITSTATUS( status ) == 202 )
+                r = Journal::TIMEOUT;
+            else
+                r = Journal::FAILED;
+        } else if ( WIFSIGNALED( status ) && WTERMSIG( status ) == SIGINT )
+            r = Journal::INTERRUPTED;
+        else
+            r = Journal::FAILED;
+
+        io.close();
+
+        if ( iobuf && ( r == Journal::FAILED || r == Journal::TIMEOUT ) )
+            iobuf->dump( std::cout );
+
+        journal->done( id(), r );
+
+        int spaces = std::max( 69 - int( pretty().length() ), 0 );
+        progress() << pretty() << " " << std::string( spaces, '.' ) << " "
+                   << colour( r ) << std::endl;
+        if ( r == Journal::PASSED && options.rusage )
+            progress() << "   " << rusage() << std::endl;
+
+        io.clear();
+        return true;
+    }
+
+    void run( int s )
+    {
+        slot = s;
+        pipe();
+        pid = fork();
+        if ( pid < 0 )
+        {
+            perror("Fork failed.");
+            exit(201);
+        } else if (pid == 0)
+        {
+            io.close();
+            chdir( options.workdir.c_str() );
+            if ( !options.flavour_envvar.empty() )
+                setenv( options.flavour_envvar.c_str(), flavour.c_str(), 1 );
+            std::stringstream envbuf;
+            envbuf << slot;
+            setenv( "TEST_SLOT", envbuf.str().c_str(), 1 );
+            child.exec();
+        } else
+            parent();
+    }
+
+    void kill( int sig )
+    {
+        ::kill( pid, sig );
+        usleep( 100000 );
+        killpg( pid, sig );
+    }
+
+    void setupIO()
+    {
+        iobuf = 0;
+        if ( options.verbose || options.interactive )
+            io.sinks.push_back( new FdSink( 1 ) );
+        else if ( !options.terse )
+            io.sinks.push_back( iobuf = new BufSink() );
+
+        std::string n = id();
+        std::replace( n.begin(), n.end(), '/', '_' );
+        std::string fn = options.outdir + "/" + n + ".txt";
+        io.sinks.push_back( new FileSink( fn ) );
+
+        for ( std::vector< std::string >::iterator i = options.watch.begin();
+              i != options.watch.end(); ++i )
+            io.sources.push_back( new FileSource( *i ) );
+        if ( options.kmsg )
+            io.sources.push_back( new KMsg );
+    }
+
+    TestCase( Journal &j, Options opt, std::string path, std::string interp,
+              std::string name, std::string flavour, std::set< std::string > tags, std::string variant )
+        : child( path, interp ), name( name ), variant( variant ), flavour( flavour ),
+          tags( tags ), timeout( false ),
+          last_update( 0 ), last_heartbeat( 0 ), options( opt ), journal( &j )
+    {
+    }
+};
+
+struct Main
+{
+    bool die, tty;
+    time_t start;
+
+    typedef std::vector< TestCase > Cases;
+    typedef std::vector< std::string > Flavours;
+
+    Journal journal;
+    Options options;
+    Cases cases;
+
+    std::vector< TestCase * > running;
+    int running_count, done_count;
+
+    bool skip( const std::string &what, const std::vector< std::regex > &filter, bool empty )
+    {
+        if ( filter.empty() )
+            return empty;
+
+        for ( auto &filt : filter )
+            if ( std::regex_search( what, filt ) )
+                return false;
+        return true;
+    }
+
+    using Tags = std::set< std::string >;
+
+    bool match_tags( const Tags &tags, const TagFilter &filter )
+    {
+        for ( const auto &ts : filter )
+        {
+            bool match = true;
+            for ( auto tag : ts )
+            {
+                if ( tag[0] == '!' && tags.count( std::string( tag, 1, tag.size() ) ) ) match = false;
+                if ( tag[0] != '!' && !tags.count( tag ) ) match = false;
+            }
+            if ( match ) return true;
+        }
+
+        return filter.empty();
+    }
+
+    bool check_tags( std::string name, std::string file, std::set< std::string > &tags )
+    {
+        std::string line;
+        auto dirs_end = name.rfind( '/' );
+        std::string dirs( name, 0, dirs_end == std::string::npos ? 0 : dirs_end );
+        std::ifstream ifs( file );
+        std::getline( ifs, line );
+        if ( line.find( "TAGS:" ) == std::string::npos )
+            std::getline( ifs, line );
+        auto pos = line.find( "TAGS: " );
+
+        std::vector< std::string > raw;
+        if ( pos != std::string::npos )
+            split( std::string( line, pos + 5, std::string::npos ), std::back_inserter( raw ), id, ' ' );
+        split( dirs, std::back_inserter( raw ), id, '/' );
+
+        for ( auto t : raw )
+            if ( raw.size() && std::isalpha( t[0] ) )
+                tags.insert( t );
+
+        for ( auto tag : options.exclude_tags )
+            if ( tags.count( tag ) )
+                return false;
+
+        return match_tags( tags, options.tagsets );
+
+    }
+
+    bool check_interpreter( std::pair< std::string, std::string > i, std::string name )
+    {
+        return name.size() > i.first.size() &&
+               name.substr( name.length() - i.first.size() - 1, name.length() ) == "." + i.first;
+    }
+
+    void setup( Flavour flavour, std::string dir, std::string name, std::string variant )
+    {
+        std::string interpreter;
+        bool runnable = false;
+
+        if ( name.length() > 3 && name.substr( name.length() - 3, name.length() ) == ".sh" )
+            runnable = true;
+
+        for ( auto i : options.interpreters )
+            if ( ( variant.empty() && check_interpreter( i, name ) ) || check_interpreter( i, variant ) )
+            {
+                 runnable = true;
+                 interpreter = options.testdir + i.second;
+            }
+
+        if ( name.substr( 0, 4 ) == "lib/" || name.substr( 0, 5 ) == "data/" )
+            runnable = false;
+
+        if ( skip( name, options.filter1, false ) || skip( name, options.filter2, false ) )
+            runnable = false;
+
+        if ( !skip( name, options.exclude, true ) )
+            runnable = false;
+
+        std::set< std::string > tags;
+        std::string path = dir + name;
+        if ( !variant.empty() ) path += "/" + variant;
+
+        if ( !runnable || !check_tags( name, path, tags ) || !match_tags( tags, flavour.filter ) )
+            return;
+
+        TestCase tc( journal, options, path, interpreter, name, flavour.name, tags, variant );
+
+        tc.tty = tty;
+        cases.push_back( tc );
+    }
+
+    void setup( std::string dir, std::string name, std::string variant )
+    {
+        for ( auto &flavour : options.flavours )
+        {
+            if ( skip( flavour.name, options.flavourFilter, false ) )
+                continue;
+
+            setup( flavour, dir, name, variant );
+        }
+    }
+
+    void setup()
+    {
+        Listing l = listdir( options.testdir, true );
+        std::sort( l.begin(), l.end() );
+        tty = !options.batch && isatty( STDERR_FILENO );
+        char cwd[ PATH_MAX ];
+        ::getcwd( cwd, PATH_MAX );
+
+        for ( Listing::iterator i = l.begin(); i != l.end(); ++i )
+        {
+            std::string expand;
+
+            for ( auto exp : options.expand )
+                if ( check_interpreter( exp, *i ) )
+                    expand = exp.second;
+
+            if ( expand.empty() )
+                setup( options.testdir, *i, "" );
+            else
+            {
+                ::mkdir( "_expand", 0700 );
+                std::string dir = "_expand/" + *i;
+                std::string base = cwd;
+                base += "/_expand/";
+                std::string cmd = options.testdir + "/" + expand + " " + options.testdir + "/" + *i;
+                try { brq::rmtree( dir ); } catch (...) {};
+                brq::create_dir( dir.c_str() );
+                ::chdir( dir.c_str() ); /* eww */
+                ::system( cmd.c_str() );
+                ::chdir( cwd );
+                Listing l = listdir( dir, true );
+                for ( auto file : l )
+                    setup( base, *i, file );
+            }
+        }
+
+        running.resize( options.jobs );
+
+        if ( options.cont )
+            journal.read();
+        else
+            ::unlink( journal.location.c_str() );
+    }
+
+    void wait()
+    {
+        int msec = 500;
+
+        for ( auto &tc : running )
+        {
+            if ( !tc ) continue;
+            if ( fatal_signal )
+                tc->kill( fatal_signal );
+            if ( tc->finished( msec ) )
+                tc = nullptr, --running_count, ++done_count;
+            msec = 0;
+        }
+
+        if ( tty && !options.verbose )
+        {
+            int extra = running_count;
+            std::stringstream status;
+            status << "[" << std::setw( 3 ) << 100 * done_count / cases.size() << "%] ";
+            int column = 7;
+            for ( auto &tc : running )
+            {
+                if ( !tc ) continue;
+                std::string name = tc->name;
+                int time = tc->end - tc->start;
+
+                auto start = name.rfind('/'), end = name.rfind('.');
+                start = start == std::string::npos ? 0 : start + 1;
+                end = end == std::string::npos ? name.size() : end;
+
+                int tag_cnt = std::min( running_count > 4 ? 9ul : 12ul, end - start );
+                int blue_cnt = std::min( time / 60, tag_cnt ),
+                    green_cnt = std::min( ( time % 60 ) / 10, tag_cnt - blue_cnt );
+                std::string blue( name, start, blue_cnt ),
+                            green( name, start + blue_cnt, green_cnt ),
+                            gray( name, start + blue_cnt + green_cnt,
+                                  std::max( tag_cnt - blue_cnt - green_cnt, 0 ) );
+
+                if ( column + tag_cnt + 2 >= 70 /* 8 chars for + N more */ ) continue;
+                column += tag_cnt + 3;
+                status << "[" << "\033[34m" << blue << "\033[32m" << green << "\033[0m" << gray << "] ";
+                -- extra;
+            }
+            if ( extra )
+                status << "+ " << extra << " more";
+            std::cerr << status.str();
+            for ( int i = status.str().size(); i < 78; ++i )
+                std::cerr << " ";
+            std::cerr << "\r" << std::flush;
+        }
+    }
+
+    int list()
+    {
+        setup();
+        std::cerr << "would run " << cases.size() << " tests" << std::endl;
+        for ( auto &c : cases )
+            std::cout << c.name << std::endl;
+        return 0;
+    }
+
+    int do_export()
+    {
+        setup();
+
+        for ( auto &c : cases )
+        {
+            std::cout << "\"" << c.id() << "\":" << std::endl
+                      << "  name: " << c.name << std::endl
+                      << "  path: " << c.child.filename << std::endl
+                      << "  interpreter: \"" << c.child.interpreter << "\"" << std::endl
+                      << "  variant: \"" << c.variant << "\"" << std::endl
+                      << "  tags: [ ";
+            for ( auto i = c.tags.begin(); i != c.tags.end(); ++i )
+                std::cout << *i << ( ( std::next( i ) == c.tags.end() ) ? " " : ", " );
+            std::cout << "]" << std::endl << std::endl;
+        }
+
+        return 0;
+    }
+
+    int run()
+    {
+        setup();
+        start = time( 0 );
+        std::cerr << "running " << cases.size() << " tests" << std::endl;
+
+        for ( Cases::iterator i = cases.begin(); i != cases.end(); ++i )
+        {
+            if ( options.cont && journal.done( i->id() ) )
+                continue;
+
+            while ( running_count == int( running.size() ) )
+                wait();
+
+            for ( int slot = 0; slot < int( running.size() ); ++ slot )
+            {
+                if ( running[ slot ] )
+                    continue;
+                running[ slot ] = &*i;
+                i->run( slot );
+                ++ running_count;
+                break;
+            }
+
+            if ( options.fatal_timeouts && journal.timeouts >= 2 ) {
+                journal.started( i->id() ); // retry the test on --continue
+                std::cerr << "E: Hit 2 timeouts in a row with --fatal-timeouts" << std::endl;
+                std::cerr << "Suspending (please restart the VM)." << std::endl;
+                sleep( 3600 );
+                die = 1;
+            }
+
+            if ( time(0) - start > options.total_timeout ) {
+                std::cerr << "total timeout (" << options.total_timeout
+                          << "s) passed, giving up..." << std::endl;
+                die = 1;
+            }
+
+            if ( die || fatal_signal )
+                break;
+        }
+
+        while ( running_count )
+            wait();
+
+        journal.banner();
+
+        for ( Cases::iterator i = cases.begin(); i != cases.end(); ++i )
+        {
+            if ( !journal.done( i->id() ) )
+                continue;
+            auto st = journal.status[ i->id() ];
+            if ( st != Journal::PASSED && st != Journal::SKIPPED )
+                std::cerr << i->result( st ) << i->pretty() << std::endl;
+        }
+
+        if ( die || fatal_signal )
+            return 1;
+
+        return journal.count( Journal::FAILED ) ? 1 : 0;
+    }
+
+    Main( Options o ) : die( false ), journal( o.outdir ), options( o ),
+                        running_count( 0 ), done_count( 0 ) {}
+};
+
+namespace {
+
+void handler( int sig )
+{
+    signal( sig, SIG_DFL ); /* die right away next time */
+    fatal_signal = sig;
+}
+
+void setup_handlers() {
+    /* set up signal handlers */
+    for ( int i = 0; i <= 32; ++i )
+        switch (i) {
+            case SIGCHLD: case SIGWINCH: case SIGURG:
+            case SIGKILL: case SIGSTOP: break;
+            default: signal(i, handler);
+        }
+}
+
+}
+
+/* TODO remove in favour of brick-commandline.h */
+struct Args {
+    typedef std::vector< std::string > V;
+    V args;
+
+    Args( int argc, const char **argv ) {
+        for ( int i = 1; i < argc; ++ i )
+            args.push_back( argv[ i ] );
+    }
+
+    bool has( std::string fl ) {
+        return std::find( args.begin(), args.end(), fl ) != args.end();
+    }
+
+    std::string opt( std::string fl ) {
+        V::iterator i = std::find( args.begin(), args.end(), fl );
+        if ( i == args.end() || i + 1 == args.end() )
+            return "";
+        return *(i + 1);
+    }
+
+    V opts( std::string fl )
+    {
+        V acc;
+        V::iterator i = args.begin();
+        while ( i != args.end() )
+        {
+            i = std::find( i, args.end(), fl );
+            if ( i == args.end() || i + 1 == args.end() )
+                return acc;
+            acc.push_back( *(i + 1) );
+            ++ i;
+        }
+        return acc;
+    }
+};
+
+namespace {
+
+bool hasenv( const char *name ) {
+    const char *v = getenv( name );
+    if ( !v )
+        return false;
+    if ( strlen( v ) == 0 || !strcmp( v, "0" ) )
+        return false;
+    return true;
+}
+
+std::regex mkRegex( const std::string &str ) {
+    return std::regex( str, std::regex::extended );
+}
+
+template< typename C >
+void parse_interpreter( std::string str, C &out )
+{
+    std::vector< std::string > s;
+    split( str, std::back_inserter( s ), id, ':' );
+    if ( s.size() != 2 )
+    {
+        std::cerr << "FATAL: the --interpreter option must contain exactly one ':'" << std::endl;
+        exit( 1 );
+    }
+    out.push_back( std::make_pair( s[0], s[1] ) );
+}
+
+}
+
+int run( int argc, const char **argv, std::string fl_envvar = "TEST_FLAVOUR" )
+{
+    Args args( argc, argv );
+    Options opt;
+
+    opt.flavour_envvar = fl_envvar;
+
+    if ( args.has( "--continue" ) )
+        opt.cont = true;
+
+    if ( args.has( "--only" ) )
+        split( args.opt( "--only" ), std::back_inserter( opt.filter1 ), mkRegex );
+    if ( hasenv( "T" ) )
+        split( getenv( "T" ), std::back_inserter( opt.filter2 ), mkRegex );
+
+    for ( auto t : args.opts( "--tags" ) )
+    {
+        opt.tagsets.emplace_back();
+        split( t, std::back_inserter( opt.tagsets.back() ) );
+    }
+
+    for ( auto ts : args.opts( "--exclude-tags" ) )
+        split( ts, std::back_inserter( opt.exclude_tags ) );
+
+    if ( hasenv( "TAGS" ) )
+    {
+        opt.tagsets.emplace_back();
+        split( getenv( "TAGS" ), std::back_inserter( opt.tagsets.back() ) );
+    }
+
+    if ( args.has( "--skip" ) )
+        split( args.opt( "--skip" ), std::back_inserter( opt.exclude ), mkRegex );
+    if ( hasenv( "S" ) )
+        split( getenv( "S" ), std::back_inserter( opt.exclude ), mkRegex );
+
+    if ( args.has( "--fatal-timeouts" ) )
+        opt.fatal_timeouts = true;
+
+    if ( args.has( "--heartbeat" ) )
+        opt.heartbeat = args.opt( "--heartbeat" );
+
+    if ( args.has( "--batch" ) || hasenv( "BATCH" ) ) /* suppress TTY features */
+    {
+        opt.verbose = false;
+        opt.batch = true;
+    }
+
+    if ( args.has( "--verbose" ) || hasenv( "VERBOSE" ) ) /* print all outputs */
+    {
+        opt.terse = false;
+        opt.verbose = true;
+    }
+
+    if ( args.has( "--terse" ) || hasenv( "TERSE" ) ) /* suppress outputs */
+    {
+        opt.verbose = false;
+        opt.terse = true;
+    }
+
+    if ( args.has( "--interactive" ) || hasenv( "INTERACTIVE" ) )
+    {
+        opt.terse = false;
+        opt.verbose = false;
+        opt.interactive = true;
+    }
+
+    if ( args.has( "--print-rusage" ) ) opt.rusage = true;
+
+    for ( auto f : args.opts( "--flavour" ) )
+        opt.flavours.emplace_back( f );
+
+    if ( opt.flavours.empty() )
+        opt.flavours.emplace_back( "vanilla" );
+
+    if ( hasenv( "F" ) )
+        split( getenv( "F" ), std::back_inserter( opt.flavourFilter ), mkRegex );
+
+    if ( args.has( "--watch" ) )
+        split( args.opt( "--watch" ), std::back_inserter( opt.watch ) );
+
+    if ( args.has( "--timeout" ) )
+        opt.timeout = atoi( args.opt( "--timeout" ).c_str() );
+
+    if ( args.has( "--total-timeout" ) )
+        opt.total_timeout = atoi( args.opt( "--total-timeout" ).c_str() );
+
+    if ( args.has( "--kmsg" ) )
+        opt.kmsg = true;
+
+    if ( args.has( "--jobs" ) )
+        opt.jobs = atoi( args.opt( "--jobs" ).c_str () );
+
+    if ( hasenv( "JOBS" ) )
+        opt.jobs = atoi( getenv( "JOBS" ) );
+
+    opt.outdir = args.opt( "--outdir" );
+    opt.testdir = args.opt( "--testdir" );
+    opt.workdir = args.opt( "--workdir" );
+
+    for ( auto i : args.opts( "--interpreter" ) )
+        parse_interpreter( i, opt.interpreters );
+
+    for ( auto i : args.opts( "--expand" ) )
+        parse_interpreter( i, opt.expand );
+
+    if ( opt.testdir.empty() )
+    {
+        std::cerr << "FATAL: --testdir must be specified" << std::endl;
+        exit( 1 );
+    }
+
+    if ( opt.workdir.empty() )
+        opt.workdir = opt.testdir;
+
+    opt.testdir += "/";
+
+    setup_handlers();
+
+    Main main( opt );
+    if ( args.has( "--export" ) )
+        return main.do_export();
+    else if ( hasenv( "LIST" ) || args.has( "--list" ) )
+        return main.list();
+    else
+        return main.run();
+}
+
+}
+}
+
+#ifdef BRICK_DEMO
+
+int main( int argc, const char **argv ) {
+    return brick::shelltest::run( argc, argv );
+}
+
+#endif
+
+// vim: syntax=cpp tabstop=4 shiftwidth=4 expandtab ft=cpp

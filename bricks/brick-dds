@@ -1,0 +1,364 @@
+#include <unordered_map>
+#include <deque>
+#include <cmath>
+#include <random>
+#include <brick-string>
+
+/* Data-dependent splitter. */
+
+namespace brq
+{
+    uint64_t mul64_mod( uint64_t a, uint64_t b, uint64_t p )
+    {
+        return ( __uint128_t( a ) * __uint128_t( b ) ) % __uint128_t( p );
+    }
+
+    /* LCG parameters from P. L'Ecuyer, Tables of Linear Congruential Generators of
+     * Different Sizes and Good Lattice Structure, in Mathematics of Computation
+     * vol 68 n. 225, Jan 1999. Indexed by the approximate number of bits
+     * available mod p. */
+
+    static const std::vector< std::tuple< uint64_t, uint64_t, uint64_t > > lcg_param
+    {
+        { ( 1ul <<  8 ) - 5,   33ul,                  213ul },
+        { ( 1ul <<  8 ) - 5,   33ul,                  213ul },
+        { ( 1ul <<  8 ) - 5,   33ul,                  213ul },
+        { ( 1ul <<  8 ) - 5,   33ul,                  213ul },
+        { ( 1ul <<  8 ) - 5,   33ul,                  213ul },
+        { ( 1ul <<  8 ) - 5,   33ul,                  213ul },
+        { ( 1ul <<  8 ) - 5,   33ul,                  213ul },
+        { ( 1ul <<  8 ) - 5,   33ul,                  213ul },
+        { ( 1ul <<  8 ) - 5,   33ul,                  213ul },
+        { ( 1ul <<  9 ) - 3,   35ul,                  160ul },
+        { ( 1ul << 10 ) - 3,   65ul,                  377ul },
+        { ( 1ul << 11 ) - 9,   328ul,                 603ul },
+        { ( 1ul << 12 ) - 3,   352ul,                 500ul }, /* from the errata */
+        { ( 1ul << 13 ) - 1,   1716ul,                5580ul },
+        { ( 1ul << 14 ) - 3,   665ul,                 3424ul },
+        { ( 1ul << 15 ) - 19,  9515ul,                10088ul },
+        { ( 1ul << 16 ) - 15,  2469ul,                47104ul },
+        { ( 1ul << 17 ) - 1,   29223ul,               119858ul },
+        { ( 1ul << 18 ) - 5,   21876ul,               118068ul },
+        { ( 1ul << 19 ) - 1,   37698ul,               127574ul },
+        { ( 1ul << 20 ) - 3,   100768ul,              463964ul },
+        { ( 1ul << 21 ) - 9,   1043187ul,             1352851ul },
+        { ( 1ul << 22 ) - 3,   1731287ul,             2040406ul },
+        { ( 1ul << 23 ) - 15,  1706325ul,             6513898ul },
+        { ( 1ul << 24 ) - 3,   4408741ul,             6180188ul },
+        { ( 1ul << 25 ) - 39,  12836191ul,            5420585ul },
+        { ( 1ul << 26 ) - 5,   19552116ul,            24409594ul },
+        { ( 1ul << 27 ) - 39,  3162696ul,             71543207ul },
+        { ( 1ul << 28 ) - 57,  140853223ul,           102445941ul },
+        { ( 1ul << 29 ) - 3,   530877178ul,           475905290ul },
+        { ( 1ul << 30 ) - 35,  295397169ul,           1017586987ul },
+        { ( 1ul << 31 ) - 1,   784588716ul,           163490618ul },
+        { ( 1ul << 32 ) - 5,   1223106847ul,          4223879656ul },
+        { ( 1ul << 33 ) - 9,   2278442619ul,          1729516095ul },
+        { ( 1ul << 34 ) - 41,  473186378ul,           6625295500ul },
+        { ( 1ul << 35 ) - 31,  22277574834ul,         16353251630ul },
+        { ( 1ul << 36 ) - 5,   45453986995ul,         40162435147ul },
+        { ( 1ul << 37 ) - 25,  2996735870ul,          105638438130ul },
+        { ( 1ul << 38 ) - 45,  101262352583ul,        258824536167ul },
+        { ( 1ul << 39 ) - 7,   486583348513ul,        247058793858ul },
+        { ( 1ul << 40 ) - 87,  88718554611ul,         864341149053ul },
+        { ( 1ul << 41 ) - 21,  416480024109ul,        1420814698317ul },
+        { ( 1ul << 42 ) - 11,  2928603677866ul,       3015630915308ul },
+        { ( 1ul << 43 ) - 57,  4204926164974ul,       3434105419275ul },
+        { ( 1ul << 44 ) - 17,  11394954323348ul,      6363281811747ul },
+        { ( 1ul << 45 ) - 55,  18586042069168ul,      11850386302026ul },
+        { ( 1ul << 46 ) - 21,  15721062042478ul,      56602273662768ul },
+        { ( 1ul << 47 ) - 115, 47912952719020ul,      65482710949587ul },
+        { ( 1ul << 48 ) - 59,  51699608632694ul,      8419150949545ul },
+        { ( 1ul << 49 ) - 81,  480567615612976ul,     545116409148737ul },
+        { ( 1ul << 50 ) - 27,  157252724901243ul,     422705992136651ul },
+        { ( 1ul << 51 ) - 129, 277678575478219ul,     598269678776822ul },
+        { ( 1ul << 52 ) - 47,  3622689089018661ul,    290414426581729ul },
+        { ( 1ul << 53 ) - 111, 4179081713689027ul,    1169831480608704ul },
+        { ( 1ul << 54 ) - 33,  3819217137918427ul,    6822546395505148ul },
+        { ( 1ul << 55 ) - 55,  19708881949174686ul,   32182684885571630ul },
+        { ( 1ul << 56 ) - 5,   26093644409268278ul,   69294271672288492ul },
+        { ( 1ul << 57 ) - 13,  95424006161758065ul,   2274812368615087ul },
+        { ( 1ul << 58 ) - 27,  163847936876980536ul,  256462492811829427ul },
+        { ( 1ul << 59 ) - 55,  124795884580648576ul,  526457461907464601ul },
+        { ( 1ul << 60 ) - 93,  439138238526007932ul,  998922549734761568ul },
+        { ( 1ul << 61 ) - 1,   1070922063159934167ul, 212694642947925581ul },
+        { ( 1ul << 62 ) - 57,  431334713195186118ul,  1159739479727509578ul },
+        { ( 1ul << 63 ) - 25,  2551091334535185398ul, 9006541669060512547ul },
+        { ( 1ul << 63 ) - 1 + ( 1ul << 63 ) - 58,
+                               2227057010910366687ul, 17412224886468018797ul },
+    };
+
+    struct ddsplit;
+
+    struct ddstream
+    {
+        std::string buf;
+        int buf_idx = 0;
+        int64_t idx = 0;
+
+        using fetch_t = std::function< std::string() >;
+        fetch_t fetch;
+
+        ddstream( fetch_t fetch ) : fetch( fetch )
+        {
+            buf = std::move( fetch() );
+        }
+
+        ddstream( std::string s ) : buf( std::move( s ) ) {}
+
+        void fetch_if_needed()
+        {
+            if ( buf_idx == buf.size() && !buf.empty() )
+                buf = fetch ? fetch() : "", buf_idx = 0;
+        }
+
+        char fetch_char()
+        {
+            fetch_if_needed();
+            ++ idx;
+            return buf[ buf_idx ++ ];
+        }
+
+        bool empty()
+        {
+            fetch_if_needed();
+            return buf.empty();
+        }
+    };
+
+    struct ddhash
+    {
+        const int min_size, mean_size, max_size;
+        using param_t = std::tuple< uint64_t, uint64_t, uint64_t >;
+        const param_t param;
+
+        uint64_t modulus()  const { return std::get< 0 >( param ); }
+        uint64_t base()     const { return std::get< 1 >( param ); }
+        uint64_t base_inv() const { return std::get< 2 >( param ); }
+
+        const int win_min = 4, win_max;
+        uint64_t hash = 0;
+        uint64_t power;
+
+        ddhash( int mean, param_t p )
+            : min_size( mean / 5 ), mean_size( mean ), max_size( 3 * mean ),
+              param( p ), win_max( std::max( 2 * win_min, mean / 2 ) ), power( base() )
+        {}
+
+        ddhash( int mean, int needbits ) : ddhash( mean, lcg_param[ needbits ] ) {}
+        ddhash( int mean ) : ddhash( mean, std::round( 2 * std::log2( mean ) ) ) {}
+
+        void update( unsigned char ch )
+        {
+            hash += ch * power;
+            hash %= modulus(); // ( uint64_t( hash ) * base() + ch ) % modulus();
+            power = ( power * base() ) % modulus();
+        }
+    };
+
+    struct ddsplit : ddstream, ddhash
+    {
+        std::unordered_map< uint64_t, int > h_seen;
+        std::deque< uint64_t > h_win;
+        std::string chunk;
+        std::unique_ptr< ddsplit > recurse;
+        int recurse_depth = 0;
+
+        ddsplit( int mean, std::string buf ) : ddstream( buf ), ddhash( mean ) {}
+        ddsplit( int mean, fetch_t fetch ) : ddstream( fetch ), ddhash( mean ) {}
+        ddsplit( int mean, param_t p, fetch_t fetch ) : ddstream( fetch ), ddhash( mean, p ) {}
+        ddsplit( int mean, param_t p, std::string buf ) : ddstream( buf ), ddhash( mean, p ) {}
+
+        std::string &chunk_get()
+        {
+            if ( recurse )
+                return recurse->chunk_get();
+            else
+            {
+                TRACE( "yielding at", idx, "size", chunk.size(), "max", max_size );
+                return chunk;
+            }
+        }
+
+        bool in_window( int where ) const
+        {
+            return where >= idx - win_max &&
+                   where <= idx - win_min;
+        }
+
+        bool empty()
+        {
+            if ( recurse && !recurse->empty() )
+                return false;
+            return ddstream::empty();
+        }
+
+        bool chunk_extend()
+        {
+            if ( empty() )
+                return maybe_recurse(), false; /* no more data */
+
+            bool end = false;
+            char ch = fetch_char();
+            chunk += ch;
+            update( ch );
+
+            h_win.push_back( hash );
+
+            if ( auto it = h_seen.find( hash ); it != h_seen.end() )
+            {
+                end = in_window( it->second ) && chunk.size() > min_size;
+                ASSERT_LEQ( idx - win_max, it->second );
+                it->second = idx;
+            }
+            else
+                h_seen.emplace( hash, idx );
+
+            if ( h_win.size() > win_max )
+            {
+                auto drop = h_win.front();
+                auto it = h_seen.find( drop );
+                ASSERT( it != h_seen.end() );
+
+                if ( it->second <= idx - win_max )
+                    h_seen.erase( it );
+                h_win.pop_front();
+            }
+
+            ASSERT( h_win.size() <= win_max );
+
+            if ( end )
+                maybe_recurse();
+
+            return !end;
+        }
+
+        void maybe_recurse()
+        {
+            if ( chunk.size() >= max_size && recurse_depth < 3 )
+            {
+                TRACE( "recurse at", idx, "size", chunk.size(), "max", max_size );
+
+                param_t p_rec{ modulus(),
+                               ( base() * base() ) % modulus(),
+                               ( base_inv() * base_inv() ) % modulus() };
+
+                recurse.reset( new ddsplit( mean_size, p_rec, std::move( chunk ) ) );
+                recurse->recurse_depth = recurse_depth + 1;
+                recurse->chunk_next();
+                chunk.clear();
+            }
+        }
+
+        void chunk_next()
+        {
+            chunk.clear();
+
+            if ( recurse && recurse->empty() )
+                recurse.reset();
+
+            if ( recurse )
+                recurse->chunk_next();
+            else
+                while ( chunk_extend() );
+        }
+
+        struct iterator
+        {
+            ddsplit &s;
+            bool _end;
+
+            iterator &operator++()
+            {
+                if ( s.empty() )
+                    _end = true;
+                else
+                    s.chunk_next();
+
+                return *this;
+            }
+            bool operator!=( const iterator &o ) { return _end != o._end; }
+            std::string &operator*() { return s.chunk_get(); }
+        };
+
+        iterator begin() { chunk_next(); return { *this, false }; }
+        iterator end()   { return { *this, true }; }
+    };
+
+}
+
+namespace t_brq
+{
+    struct lcg_param
+    {
+        TEST( inverse )
+        {
+            for ( auto [ p, a, a_inv ] : brq::lcg_param )
+                ASSERT_EQ( brq::mul64_mod( a, a_inv, p ), 1, a, a_inv );
+        }
+    };
+
+    struct ddsplit
+    {
+        TEST( stream )
+        {
+            std::vector< std::string > data = { "hel", "lo ", "worl", "d", "" };
+            int i = 0;
+            brq::ddstream s( [&]{ return data[ i++ ]; } );
+
+            for ( char c : std::string_view( "hello world" ) )
+            {
+                ASSERT( !s.empty() );
+                ASSERT_EQ( s.fetch_char(), c );
+            }
+
+            ASSERT( s.empty() );
+        }
+
+        TEST( chunk )
+        {
+            std::mt19937 rand;
+            std::uniform_int_distribution<> dist( 0, 255 );
+
+            std::vector< std::string > data;
+            std::string rebuilt, expected;
+
+            for ( int i = 0; i < 16000; ++i )
+            {
+                data.emplace_back();
+                for ( int j = 0; j < 1000; ++j )
+                    data.back() += dist( rand );
+                expected += data.back();
+            }
+
+            data.emplace_back();
+
+            for ( int mean : { 8000, 16000, 32000, 64000, 128000 } )
+            {
+                std::vector< int > sizes;
+                int i = 0;
+                brq::ddsplit s( mean, 3 * mean, [&]{ return data[ i++ ]; } );
+
+                for ( auto c : s )
+                {
+                    // rebuilt += c;
+                    sizes.push_back( c.size() );
+                }
+
+                // ASSERT_EQ( rebuilt, expected );
+
+                std::cerr << std::endl;
+                std::cerr << "[ " << *std::min_element( sizes.begin(), sizes.end() ) << " "
+                                  << expected.size() / sizes.size() << " "
+                                  << *std::max_element( sizes.begin(), sizes.end() ) << " ] "
+                          << sizes.size() << "; "
+                          << s.modulus() << " " << s.base() << " " << s.h_seen.size() << std::endl;
+
+                std::sort( sizes.begin(), sizes.end() );
+                for ( auto s : sizes )
+                    std::cerr << s << " ";
+                std::cerr << std::endl;
+            }
+        }
+    };
+}
