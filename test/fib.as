@@ -4,10 +4,8 @@
   .stack_size 5
 
     fclosure 0    ; load function fib
-
     push_i32 5
     call 1        ; fib ( 5 )
-
     return
 
 .function fib
