@@ -1,15 +1,20 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.10)
 project(qthu)
 
-add_executable(main)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_executable(qasm)
 include(cmake/quickjs.cmake)
-target_sources(main
+target_sources(qasm
     PRIVATE
     src/main.cpp
-    src/qasm.cpp
+    src/asm/qassembly.cpp
+    src/asm/instruction.cpp
+    src/asm/directive.cpp
 )
 
-target_link_libraries(main 
+target_link_libraries(qasm
     PRIVATE 
     quickjs
 )
