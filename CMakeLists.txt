@@ -8,7 +8,7 @@ add_executable(qasm)
 include(cmake/quickjs.cmake)
 target_sources(qasm
     PRIVATE
-    src/main.cpp
+    src/qasm.cpp
     src/asm/qassembly.cpp
     src/asm/instruction.cpp
     src/asm/directive.cpp
@@ -26,6 +26,20 @@ target_sources(bcrun
 )
 
 target_link_libraries(bcrun
+    PRIVATE
+    quickjs-libc
+)
+
+add_executable(builder_demo)
+target_sources(builder_demo
+    PRIVATE
+    src/builder_demo.cpp
+    src/asm/qassembly.cpp
+    src/asm/instruction.cpp
+    src/asm/directive.cpp
+)
+
+target_link_libraries(builder_demo
     PRIVATE
     quickjs-libc
 )

@@ -115,7 +115,7 @@ struct instruction
         std::vector< uint8_t > bytes;
         bytes.push_back( opcode );
         if ( has_address && !address.resolved() )
-            throw std::runtime_error( "unresolved label operand during bytecode encoding" );
+            throw std::runtime_error( "Unresolved label operand during bytecode encoding" );
 
         uint32_t value = has_address ? static_cast< uint32_t >( address.value() ) : operand.raw;
         for ( int i = 0; i < size - 1; i++ )
