@@ -3,6 +3,7 @@
 #include <optional>
 #include <string_view>
 #include <ctype.h>
+#include <iostream>
 
 namespace qthu
 {
@@ -12,12 +13,12 @@ inline int from_hex( char c )
     return c - ( isdigit( c ) ? '0' : ( isupper( c ) ? 'A' : 'a' ) - 10 );
 }
 
-struct lexer
+struct lexer_base 
 {
     std::string_view sv;
     bool ok = true;
 
-    explicit lexer( std::string_view sv ) : sv( sv ) { }
+    explicit lexer_base( std::string_view sv ) : sv( sv ) { }
 
     explicit operator bool() const
     {

@@ -1,19 +1,19 @@
 #pragma once
 
-#include "lexer.hpp"
+#include "lexer_base.hpp"
 
 namespace qthu
 {
 
 // todo: this should fix the redundancy in instruction.cpp and directive.cpp
-struct arg_parser : lexer
+struct arg_parser : lexer_base
 {
 };
 
-struct line_parser : lexer
+struct line_parser : lexer_base
 {
-    using lexer::lexer;
-
+    using lexer_base::lexer_base;
+    
     void trim_comment()
     {
         auto ix = sv.find_first_of( ";#" );

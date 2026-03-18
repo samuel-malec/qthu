@@ -7,7 +7,7 @@
 #include "opcodes.hpp"
 #include "qassembly.hpp"
 #include "../bytecode/program.hpp"
-#include "../common/parser.hpp"
+#include "../common/parser_base.hpp"
 
 namespace qthu
 {

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "asm/qassembly.hpp"
+#include "qassembly.hpp"
 
 namespace qthu
 {

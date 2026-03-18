@@ -3,14 +3,14 @@
 
 #include "instruction.hpp"
 #include "opcodes.hpp"
-#include "../common/lexer.hpp"
+#include "../common/lexer_base.hpp"
 
 namespace qthu
 {
 
 instruction instruction::from_string( const std::string_view sv )
 {
-    lexer lex( sv );
+    lexer_base lex( sv );
     lex.drop_blanks();
 
     auto mnemonic_sv = lex.shift_word();
