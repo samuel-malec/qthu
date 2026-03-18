@@ -43,3 +43,14 @@ target_link_libraries(builder_demo
     PRIVATE
     quickjs-libc
 )
+
+add_executable(jsc)
+target_sources(jsc
+    PRIVATE
+    src/jsc/jsc.cpp
+)
+
+target_link_libraries(jsc
+    PRIVATE
+    quickjs-libc
+)
