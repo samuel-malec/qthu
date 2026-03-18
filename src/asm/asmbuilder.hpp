@@ -1,6 +1,7 @@
 #pragma once
 
 #include "qassembly.hpp"
+#include "op_builders.hpp"
 
 namespace qthu
 {
@@ -10,7 +11,7 @@ struct asmbuilder
     assembly assm;
     function_assembly* current = nullptr;
 
-    asmbuilder& function( std::string_view name, uint16_t args, uint16_t locals,
+    asmbuilder& add_function( std::string_view name, uint16_t args, uint16_t locals,
                           uint16_t stack_size )
     {
         current = &assm.add_function();
@@ -26,17 +27,24 @@ struct asmbuilder
         return *this;
     }
 
-    asmbuilder& label( std::string_view name )
+    asmbuilder& add_label( std::string_view name )
     {
         ensure_function();
         current->add_label( name );
         return *this;
     }
 
-    asmbuilder& instr( std::string_view text )
+    asmbuilder& add_instr( std::string_view text )
     {
         ensure_function();
         current->add_instr( qthu::instruction::from_string( text ) );
+        return *this;
+    }
+
+    asmbuilder& add_instr( qthu::instruction instr )
+    {
+        ensure_function();
+        current->add_instr( std::move( instr ) );
         return *this;
     }
 

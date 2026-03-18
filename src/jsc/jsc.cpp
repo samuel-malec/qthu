@@ -5,6 +5,7 @@
 
 #include "../common/file.hpp"
 #include "lexer.hpp"
+#include "parser.hpp"
 
 using config = std::tuple< std::string, std::string >;
 
@@ -36,7 +37,8 @@ int main( int argc, const char** argv )
         const auto& [ in_name, out_name ] = parse_args( argc, argv );
         std::string content = read_file( in_name );
         const auto& tokens = jsc::lex( content );
-        std::cout << jsc::print( tokens );
+        const auto ast = jsc::parse( tokens );
+        std::cout << jsc::print( ast );
     }
     catch ( const std::exception& e )
     {

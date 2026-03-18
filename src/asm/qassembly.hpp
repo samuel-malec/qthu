@@ -56,8 +56,7 @@ struct function_assembly
 
     auto& add_instr( instruction i, document::span lit = {} )
     {
-        return add(
-            { .kind = item::instruction, .instr = std::move( i ), .lit = lit, .size = i.size } );
+        return add( { .kind = item::instruction, .instr = std::move( i ), .lit = lit, .size = i.size } );
     }
 
     auto& add_label( std::string_view label_name, document::span lit = {} )

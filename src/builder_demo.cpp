@@ -5,13 +5,13 @@
 int main()
 {
     qthu::asmbuilder builder;
-    builder.function( "main", 0, 0, 5 );
-    builder.instr( "push_i32 6" );
+    builder.add_function( "main", 0, 0, 5 );
+    builder.add_instr( "push_i32 6" );
     // builder.instr( "goto sike" );
-    builder.instr( "push_i32 2" );
-    builder.instr( "add" );
-    // builder.label( "sike" );
-    builder.instr( "return" );
+    builder.add_instr( "push_i32 2" );
+    builder.add_instr( "add" );
+    // builder.add_label( "sike" );
+    builder.add_instr( "return" );
     std::cout << builder.print_asm();
     qthu::program prog = builder.build();
     prog.write_binary( "demo.qbc" );
