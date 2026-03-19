@@ -97,10 +97,9 @@ struct parser
                 params.push_back( expect( cat::ident, "parameter" ).lit );
             expect( ")", "')'" );
         }
-
+        
         auto body = parse_block();
-        return function_decl{
-            .name = name, .params = std::move( params ), .body = std::move( body ) };
+        return function_decl{.name = name, .params = std::move( params ), .body = std::move( body ) };
     }
 
     std::vector< stmt > parse_block()

@@ -3,9 +3,11 @@
 #include <string>
 #include <cstring>
 
+#include "codegen.hpp"
 #include "../common/file.hpp"
 #include "lexer.hpp"
 #include "parser.hpp"
+#include "../asm/asmbuilder.hpp"
 
 using config = std::tuple< std::string, std::string >;
 
@@ -38,7 +40,11 @@ int main( int argc, const char** argv )
         std::string content = read_file( in_name );
         const auto& tokens = jsc::lex( content );
         const auto ast = jsc::parse( tokens );
-        std::cout << jsc::print( ast );
+        qthu::asmbuilder builder;
+        jsc::generate( builder, ast );
+        std::cout << builder.print_asm() << '\n';
+        qthu::program prog = builder.build();
+        prog.write_binary( out_name );
     }
     catch ( const std::exception& e )
     {

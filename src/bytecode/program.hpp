@@ -39,9 +39,12 @@ struct program
         if ( functions.empty() )
             throw std::runtime_error( "Cannot wrap empty program" );
 
-        bytes result;
+        if ( functions[ 0 ].name != "main" )
+            throw std::runtime_error( "Entry function must be first and named 'main'" );
 
-        // BC_TAG_MODULE (0x05)
+        bytes result;
+    
+        // Bytecode format version (BC_VERSION)
         result.push_back( 0x05 );
 
         // Build atom table
@@ -53,11 +56,10 @@ struct program
         for ( const auto& atom : atoms )
             encode_string( result, atom );
 
-        // Main function (first function in list)
         const auto& main_func = functions[ 0 ];
+        const auto& main_bytecode = main_func.bytecode;
 
         // BC_TAG_FUNCTION_BYTECODE (0x0c)
-
         result.push_back( 0x0c );
 
         // Function header
@@ -65,25 +67,23 @@ struct program
         encode_u16( result, flags );
         encode_u8( result, 1 ); // jsMode
 
-        encode_atom( result, 0 ); // function name atom index
+        encode_atom( result, 0 ); // function name atom index (entry function)
         encode_leb128_u( result, main_func.arg_count ); // arg_count
         encode_leb128_u( result, main_func.local_count ); // var_count
         encode_leb128_u( result, main_func.arg_count ); // defined_arg_count
         encode_leb128_u( result, main_func.stack_size ); // stack_size
+        encode_leb128_u( result, 0 ); // var_ref_count
         encode_leb128_u( result, 0 ); // closure_var_count
-        encode_leb128_i( result, 0 ); // cpool_count
-        encode_leb128_i(
-            result, static_cast< int32_t >( functions.size() - 1 ) ); // cpool (nested functions)
-        encode_leb128_i( result,
-                         static_cast< int32_t >( main_func.bytecode.size() ) ); // byte_code_len
-        encode_leb128_i( result, main_func.local_count + main_func.arg_count ); // local_count
+        encode_leb128_u( result, static_cast< uint32_t >( functions.size() - 1 ) ); // cpool_count
+        encode_leb128_u( result, static_cast< uint32_t >( main_bytecode.size() ) ); // byte_code_len
+        encode_leb128_u( result, main_func.local_count + main_func.arg_count ); // vardef_count
 
         // Encode args
         for ( uint32_t i = 0; i < main_func.arg_count; i++ )
         {
             encode_atom( result, 0 ); // var_name
-            encode_leb128_i( result, 0 ); // scope_level
-            encode_leb128_u( result, 0 ); // scope_next
+            encode_leb128_u( result, 0 ); // scope_next + 1 (0 means no next scope var)
+            encode_leb128_u( result, 0 ); // var_ref_idx
             encode_u8( result, 0 ); // var_kind
         }
 
@@ -91,41 +91,42 @@ struct program
         for ( uint32_t i = 0; i < main_func.local_count; i++ )
         {
             encode_atom( result, 0 ); // var_name
-            encode_leb128_i( result, 0 ); // scope_level
-            encode_leb128_u( result, 0 ); // scope_next
+            encode_leb128_u( result, 0 ); // scope_next + 1 (0 means no next scope var)
+            encode_leb128_u( result, 0 ); // var_ref_idx
             encode_u8( result, 0 ); // var_kind
         }
 
         // Main function bytecode
-        result.insert( result.end(), main_func.bytecode.begin(), main_func.bytecode.end() );
+        result.insert( result.end(), main_bytecode.begin(), main_bytecode.end() );
 
         // Nested functions (cpool)
-        for ( size_t i = 1; i < functions.size(); i++ )
+        for ( std::size_t i = 1; i < functions.size(); ++i )
         {
             const auto& func = functions[ i ];
+            const auto& func_bytecode = func.bytecode;
 
             result.push_back( 0x0c ); // BC_TAG_FUNCTION_BYTECODE
             uint16_t nested_flags = 0x0001;
             encode_u16( result, nested_flags );
             encode_u8( result, 1 ); // jsMode
 
-            encode_atom( result, i ); // function name atom index
+            encode_atom( result, static_cast< uint32_t >( i ) ); // function name atom index
             encode_leb128_u( result, func.arg_count ); // arg_count
             encode_leb128_u( result, func.local_count ); // var_count
             encode_leb128_u( result, func.arg_count ); // defined_arg_count
             encode_leb128_u( result, func.stack_size ); // stack_size
+            encode_leb128_u( result, 0 ); // var_ref_count
             encode_leb128_u( result, 0 ); // closure_var_count
-            encode_leb128_i( result, 0 ); // cpool_count (no constants)
-            encode_leb128_i( result, 0 ); // no nested functions
-            encode_leb128_i( result,
-                             static_cast< int32_t >( func.bytecode.size() ) ); // byte_code_len
-            encode_leb128_i( result, func.local_count + func.arg_count ); // local_count
+            encode_leb128_u( result, 0 ); // cpool_count (no constants)
+            encode_leb128_u( result,
+                             static_cast< uint32_t >( func_bytecode.size() ) ); // byte_code_len
+            encode_leb128_u( result, func.local_count + func.arg_count ); // vardef_count
 
             // Encode args
             for ( uint32_t j = 0; j < func.arg_count; j++ )
             {
                 encode_atom( result, 0 );
-                encode_leb128_i( result, 0 );
+                encode_leb128_u( result, 0 );
                 encode_leb128_u( result, 0 );
                 encode_u8( result, 0 );
             }
@@ -134,13 +135,13 @@ struct program
             for ( uint32_t j = 0; j < func.local_count; j++ )
             {
                 encode_atom( result, 0 );
-                encode_leb128_i( result, 0 );
+                encode_leb128_u( result, 0 );
                 encode_leb128_u( result, 0 );
                 encode_u8( result, 0 );
             }
 
             // Function bytecode
-            result.insert( result.end(), func.bytecode.begin(), func.bytecode.end() );
+            result.insert( result.end(), func_bytecode.begin(), func_bytecode.end() );
         }
 
         return result;

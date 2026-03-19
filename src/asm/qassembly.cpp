@@ -159,13 +159,15 @@ std::string function_assembly::print() const
     {
         switch ( item.kind )
         {
-        case item::instruction:
-            result +=
-                std::format( "    [instruction] {} (size: {})\n", item.instr.mnemonic, item.size );
-            break;
-        case item::label:
-            result += std::format( "  [label] {}:\n", item.name );
-            break;
+            case item::instruction:
+                if ( !item.instr.address.sym.empty() )
+                    result +=  std::format( "    [instruction] {} {} (size: {})\n", item.instr.mnemonic, item.instr.address.sym, item.size );
+                else
+                    result +=std::format( "    [instruction] {} {} (size: {})\n", item.instr.mnemonic, item.instr.operand.as_unsigned(), item.size );
+                break;
+            case item::label:
+                result += std::format( "  [label] {}:\n", item.name );
+                break;
         }
     }
     return result;

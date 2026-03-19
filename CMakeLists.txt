@@ -48,6 +48,9 @@ add_executable(jsc)
 target_sources(jsc
     PRIVATE
     src/jsc/jsc.cpp
+    src/asm/qassembly.cpp
+    src/asm/instruction.cpp
+    src/asm/directive.cpp
 )
 
 target_link_libraries(jsc
