@@ -190,11 +190,9 @@ inline void emit_call( asbuilder& builder, codegen_context& ctx, const expr& e )
         builder.add_instr( qthu::as::fclosure_( cpool_index ) );
         ctx.push();
 
-        // hidden self arg
         builder.add_instr( qthu::as::dup_() );
         ctx.push();
 
-        // hidden environment args (closures for all non-main functions)
         for ( uint16_t fn_idx : ctx.non_main_functions )
         {
             const uint32_t env_cpool_idx = static_cast< uint32_t >( fn_idx - 1 );
@@ -204,7 +202,7 @@ inline void emit_call( asbuilder& builder, codegen_context& ctx, const expr& e )
     }
     else
     {
-        // Non-main functions receive hidden env closures as args and never emit fclosure.
+        // non-main functions get env closures as args and never emit fclosure.
         if ( symb.index == 0 )
             throw std::runtime_error( "Non-main functions cannot call main with current calling convention" );
 
@@ -227,7 +225,8 @@ inline void emit_call( asbuilder& builder, codegen_context& ctx, const expr& e )
 
     for ( const expr& ex : e.subs )
         emit_expr( builder, ctx, ex );
-
+    
+    // ( hidden arg + non-main funcs ) closures + actual args
     const int arg_count = 1 + env_count + static_cast< int >( e.subs.size() );
     builder.add_instr( qthu::as::call_( arg_count ) );
     ctx.pop( arg_count + 1 );
@@ -337,14 +336,13 @@ inline void generate( asbuilder& builder, const program& prog )
         const uint16_t arg_bias = is_main ? 0 : static_cast< uint16_t >( 1 + non_main_functions.size() );
         const uint16_t emitted_arg_count = static_cast< uint16_t >( fnd.params.size() + arg_bias );
 
-        // stack_size = 100 placeholder
-        builder.add_function( fnd.name, emitted_arg_count, lt.local_count, 100 );
+        // stack_size = 64 placeholder
+        builder.add_function( fnd.name, emitted_arg_count, lt.local_count, 64 );
 
         codegen_context ctx{ st, lt, non_main_functions, fnd.name, fit->second, arg_bias };
         for ( const stmt& s : fnd.body )
             emit_stmt( builder, ctx, s );
 
-        // do we want to throw on function that do not return anything ? 
         if ( fnd.body.empty() || fnd.body.back().kind != stmt::kind_t::ret )
             builder.add_instr( qthu::as::return_undef_() );
 

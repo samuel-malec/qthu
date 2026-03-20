@@ -30,20 +30,6 @@ target_link_libraries(bcrun
     quickjs-libc
 )
 
-add_executable(builder_demo)
-target_sources(builder_demo
-    PRIVATE
-    src/builder_demo.cpp
-    src/asm/qassembly.cpp
-    src/asm/instruction.cpp
-    src/asm/directive.cpp
-)
-
-target_link_libraries(builder_demo
-    PRIVATE
-    quickjs-libc
-)
-
 add_executable(jsc)
 target_sources(jsc
     PRIVATE
