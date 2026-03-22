@@ -15,5 +15,5 @@ function fib_base( n )
 
 function main()
 {
-    return fib_base( 10 );
+    return fib_base( 11 );
 }

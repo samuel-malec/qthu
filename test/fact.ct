@@ -1,0 +1,29 @@
+subr fact: in → out
+(
+    w₃₂  move in → y
+
+    fork [
+      i₃₂  cons_1     → one ; construct 1
+      i₃₂  cons_1     → one ; and one more
+      w₃₂  dup  y     → x z
+
+      i₃₂  eq?  one x → done
+      bail if   done
+
+      w₃₂  dup  z     → x y
+      i₃₂  sub  y one → x
+           fact x     → z
+      i₃₂  mul  x z   → y
+    join ]
+
+    w₃₂  move y  → out
+)
+
+subr check
+(
+    i₃₂  cons_3   → a
+         fact a   → b
+    i₃₂  cons_6   → a
+    i₃₂  ne   a b → bad
+    burn if bad
+)

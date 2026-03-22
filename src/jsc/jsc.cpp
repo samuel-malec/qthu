@@ -30,7 +30,7 @@ config parse_args( int argc, const char** argv )
     return { in_name, out_name };
 }
 
-int main( int argc, const char** argv )
+int main( int argc, char* const* argv )
 {
     --argc;
     ++argv;

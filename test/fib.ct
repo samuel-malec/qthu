@@ -1,0 +1,81 @@
+structure fib
+(
+    rec = λ a b i → out
+    (
+        i₃₂   dup  b     → b₁ a'
+        i₃₂   add  b₁ a  → b'
+
+        i₃₂   cons_1     → one
+        i₃₂   sub  i one → i'
+
+        fib   loop               → cont
+        fᵢᵢᵢⁱ call cont a' b' i' → out
+    )
+
+    base = λ a b i → out
+    (
+        i₃₂ drop a
+        i₃₂ drop i
+        i₃₂ move b → out
+    )
+
+    frame = λ A B a b i → out
+    (
+        i₃₂ fork a → a₁ a₂
+        i₃₂ fork b → b₁ b₂
+        i₃₂ fork i → i₁ i₂
+
+        fᵢᵢᵢⁱ call A a₁ b₁ i₁ → out₁
+        fᵢᵢᵢⁱ call B a₂ b₂ i₂ → out₂
+
+        i₃₂ join out₁ out₂ → out
+    )
+
+    loop = λ a b i → out
+    (
+        i₃₂ cons_0      → zero
+        i₃₂ dup i       → i₁ i₂
+        i₃₂ eq? i₁ zero → cmp
+
+        bool dup cmp   → cmp₁ cmp₂
+        bool not cmp₂  → cmp₃
+
+        fib base  → base
+        fib rec   → rec
+        fib frame → frame
+
+        fᵢᵢᵢⁱ opt cmp₁ base → alt₁
+        fᵢᵢᵢⁱ opt cmp₃ rec  → alt₂
+
+        fᵢᵢᵢⁱ join alt₁ alt₂ frame → cont
+        fᵢᵢᵢⁱ call cont a b i₂     → out
+    )
+
+    compute = λ in → out
+    (
+        i₃₂  cons_1    → a ; construct 1 on stack $a
+        i₃₂  cons_1    → b ; construct 1 on stack $b
+        i₃₂  cons_2    → x ; construct 2 on stack $x
+
+        i₃₂  sub  in x → i
+
+        fib   loop            → cont
+        fᵢᵢᵢⁱ call cont a b i → out
+    )
+)
+
+structure main
+(
+    run = λ
+    (
+        i₃₂ cons_16 → a
+
+        fib compute        → program
+        fᵢⁱ call program a → out
+
+        i₃₂ cons_987   → b
+        i₃₂ eq?  out b → c
+
+        bool assert c
+    )
+)

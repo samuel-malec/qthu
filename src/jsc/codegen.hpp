@@ -333,13 +333,15 @@ inline void generate( asbuilder& builder, const program& prog )
 
         const auto& lt = it->second;
         const bool is_main = ( fnd.name == "main" );
+
+        // non-main function gets fclosure objects as args cuz only main has cp in curr impl
         const uint16_t arg_bias = is_main ? 0 : static_cast< uint16_t >( 1 + non_main_functions.size() );
         const uint16_t emitted_arg_count = static_cast< uint16_t >( fnd.params.size() + arg_bias );
 
-        // stack_size = 64 placeholder
+        // stack_size = 64 placeholder for now, update later 
         builder.add_function( fnd.name, emitted_arg_count, lt.local_count, 64 );
-
         codegen_context ctx{ st, lt, non_main_functions, fnd.name, fit->second, arg_bias };
+        
         for ( const stmt& s : fnd.body )
             emit_stmt( builder, ctx, s );
 

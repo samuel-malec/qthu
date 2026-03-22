@@ -38,8 +38,7 @@ struct parser
     [[noreturn]] void fail( std::string_view msg ) const
     {
         if ( auto t = peek() )
-            throw std::runtime_error(
-                std::format( "parse error at token '{}': {}", std::string( t->lit ), msg ) );
+            throw std::runtime_error( std::format( "parse error at token '{}': {}", std::string( t->lit ), msg ) );
         throw std::runtime_error( std::format( "parse error at end of input: {}", msg ) );
     }
 
