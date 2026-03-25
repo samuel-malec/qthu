@@ -4,6 +4,7 @@ project(qthu)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# toy assembler
 add_executable(qasm)
 include(cmake/quickjs.cmake)
 target_sources(qasm
@@ -19,6 +20,7 @@ target_link_libraries(qasm
     quickjs
 )
 
+# wrap the bytecode and run it
 add_executable(bcrun)
 target_sources(bcrun
     PRIVATE
@@ -30,6 +32,7 @@ target_link_libraries(bcrun
     quickjs-libc
 )
 
+# compiler for a toy language
 add_executable(jsc)
 target_sources(jsc
     PRIVATE
@@ -42,4 +45,11 @@ target_sources(jsc
 target_link_libraries(jsc
     PRIVATE
     quickjs-libc
+)
+
+add_executable(qthucc)
+target_sources(qthucc
+    PRIVATE
+    src/cthu/main.cpp
+    src/cthu/lexer.cpp
 )
