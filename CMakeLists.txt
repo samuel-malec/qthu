@@ -52,4 +52,10 @@ target_sources(qthucc
     PRIVATE
     src/cthu/main.cpp
     src/cthu/lexer.cpp
+    src/cthu/reader.cpp
+)
+
+target_include_directories(qthucc
+    PRIVATE
+    ${CMAKE_SOURCE_DIR}/bricks
 )

@@ -2,11 +2,13 @@
 #include <stdexcept>
 #include <string>
 #include <cstring>
+#include <filesystem>
 
 #include "../common/file.hpp"
-#include "lexer.hpp"
+#include "reader.hpp"
 
 using config = std::tuple< std::string, std::string >;
+namespace fs = std::filesystem;
 
 config parse_args( int argc, char* const* argv )
 {
@@ -27,6 +29,34 @@ config parse_args( int argc, char* const* argv )
     return { in_name, out_name };
 }
 
+cthu::diag parse_source( const fs::path &path, cthu::symtab &st )
+{
+    std::string content = read_file( path.string() );
+    auto ptr = std::make_shared< cthu::source_file >( path.string(), std::move( content ) );
+    cthu::reader r{ ptr, st };
+    return r.parse();
+}
+
+std::pair< fs::path, fs::path > support_files_for( const fs::path &input )
+{
+    auto local_prelude = input.parent_path() / "prelude.ct";
+    auto local_builtins = input.parent_path() / "builtins.ct";
+    if ( fs::exists( local_prelude ) && fs::exists( local_builtins ) )
+        return { local_prelude, local_builtins };
+
+    return { "src/cthu/prelude.ct", "src/cthu/builtins.ct" };
+}
+
+void throw_on_diag( cthu::diag err )
+{
+    if ( !err )
+        return;
+
+    brq::string_builder b;
+    err->print( b );
+    throw std::runtime_error( std::string( b.data() ) );
+}
+
 
 int main( int argc, char* const* argv )
 {
@@ -36,14 +66,18 @@ int main( int argc, char* const* argv )
 
     try
     {
-        // TODO: parse prelude
         const auto& [ in_name, out_name ] = parse_args( argc, argv );
-        std::string content = read_file( in_name );
-        source_ptr ptr = std::make_shared< source_file >( in_name, content );
-        const auto& toks = lex( ptr );
-        for ( const auto& t : toks )
-            std::cout << t << '\n'; 
+        (void) out_name;
 
+        symtab st;
+        auto input = fs::path( in_name );
+        auto [ prelude, builtins ] = support_files_for( input );
+
+        throw_on_diag( parse_source( prelude, st ) );
+        throw_on_diag( parse_source( builtins, st ) );
+        throw_on_diag( parse_source( input, st ) );
+
+        std::cout << "parse complete\n";
     }
     catch( const std::exception& e )
     {

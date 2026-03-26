@@ -1,3 +1,5 @@
+#include <format>
+
 #include "lexer.hpp"
 
 namespace cthu
@@ -10,7 +12,8 @@ namespace cthu
             return ch <= 255 && std::isalnum( ch ) ||
                    ch >= 0x2070 && ch < 0x20a0 ||
                    ch >= 0x00b0 && ch < 0x00c0 ||
-                   ch == U'?' || ch == U'_';
+                   ch >= 0x1d62 && ch < 0x1d66 ||
+                   ch == U'?' || ch == U'_' || ch == U'\'';
 
         return false;
     }
@@ -68,6 +71,6 @@ namespace cthu
             return;
         }
         
-        throw std::runtime_error( "Invalid .ct format" );
+        throw std::runtime_error( std::format( "Invalid .ct format at line: {}, in column: {}", loc.line, loc.col ) );
     }
 }
