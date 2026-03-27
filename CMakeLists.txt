@@ -47,15 +47,15 @@ target_link_libraries(jsc
     quickjs-libc
 )
 
-add_executable(qthucc)
-target_sources(qthucc
+add_executable(cthucc)
+target_sources(cthucc
     PRIVATE
     src/cthu/main.cpp
     src/cthu/lexer.cpp
     src/cthu/reader.cpp
 )
 
-target_include_directories(qthucc
+target_include_directories(cthucc
     PRIVATE
     ${CMAKE_SOURCE_DIR}/bricks
 )

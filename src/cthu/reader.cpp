@@ -236,18 +236,168 @@ namespace cthu
         return err;
     }
 
-    // function_t reader::read_function()
-    // {
-    //     return nullptr;
-    // }
+    diag reader::read_function( function_t &fn )
+    {
+        std::vector< atom > in;
+        std::vector< atom > out;
+
+        if ( auto err = read_ident_list( in, get_atom(), "" ) )
+            return err;
+
+        if ( peek( token::arrow ) )
+        {
+            fetch();
+            if ( auto err = read_ident_list( out, get_atom(), "" ) )
+                return err;
+        }
+
+        for ( auto a : in )
+            fn.in.push_back( a.index );
+
+        for ( auto a : out )
+            fn.out.push_back( a.index );
+
+        skip( token::eol );
+
+        if ( auto err = require( token::paren, "(" ) )
+            return err;
+
+        while ( true )
+        {
+            while ( peek( token::eol ) )
+                fetch();
+
+            if ( peek( token::paren, ")" ) )
+            {
+                fetch();
+                break;
+            }
+
+            auto s = fetch();
+            auto o = fetch();
+
+            if ( s.cat != token::ident || o.cat != token::ident )
+                return error( s, "expected instruction as: structure operation in... → out..." );
+
+            insn_t insn;
+            insn.structure = prog.get( s.data );
+            insn.operation = prog.get( o.data );
+
+            std::vector< atom > in_args;
+            if ( auto err = read_ident_list( in_args, get_atom(), "" ) )
+                return err;
+
+            std::vector< atom > out_args;
+            if ( peek( token::arrow ) )
+            {
+                fetch();
+                if ( auto err = read_ident_list( out_args, get_atom(), "" ) )
+                    return err;
+
+                if ( out_args.empty() )
+                    return error( o, "operation must have at least one output parameter" );
+            }
+            else
+            {
+                if ( in_args.empty() )
+                    return error( o, "operation must have at least one input or output parameter" );
+            }
+
+            insn.args.insert( insn.args.end(), in_args.begin(), in_args.end() );
+            insn.args.insert( insn.args.end(), out_args.begin(), out_args.end() );
+
+            if ( auto err = require( token::eol ) )
+                return err;
+
+            fn.body.push_back( std::move( insn ) );
+        }
+
+        return nullptr;
+    }
 
     diag reader::read_struct_sigs( structure_t &out )
     {
+        if ( auto err = require( token::punct, ":" ) )
+            return err;
+
+        while ( true )
+        {
+            auto sig = fetch();
+            if ( sig.cat != token::ident )
+                return error( sig, "expected signature name" );
+
+            if ( !prog.has_signature( sig.data ) )
+                return error( sig, "unknown signature" );
+
+            sig_instance_t inst;
+            inst.signature = prog.get( sig.data ).index;
+
+            if ( auto err = require( token::bracket, "[" ) )
+                return err;
+            
+            std::vector< atom > args;
+            if ( auto err = read_ident_list( args, get_atom(), "," ) )
+                return err;
+
+            if ( auto err = require( token::bracket, "]" ) )
+                return err;
+            
+            for ( auto a : args )
+                inst.args.push_back( a.index );
+
+            out.signatures.push_back( std::move( inst ) );
+
+            if ( peek( token::punct, "," ) )
+                fetch();
+            else
+                break;
+        }
+
         return nullptr;
     }
 
     diag reader::read_struct_defs( structure_t &out )
     {
+        diag err;
+
+        while ( !peek( token::paren, ")" ) )
+        {
+            while ( peek( token::eol ) )
+                fetch();
+
+            if ( peek( token::paren, ")" ) )
+                break;
+
+            auto op = fetch();
+            if ( op.cat != token::ident )
+                return error( op, "expected function name" );
+
+            if ( err = require( token::punct, "=" ) )
+                return err;
+
+            auto op_id = prog.get( op.data ).index;
+
+            if ( peek( token::lambda ) )
+            {
+                fetch();
+                function_t fn;
+                if ( err = read_function( fn ) )
+                    return err;
+                out.functions[ op_id ] = std::move( fn );
+            }
+            else
+            {
+                auto target = fetch();
+                if ( target.cat != token::ident )
+                    return error( target, "expected builtin operation or lambda" );
+
+                out.builtin_ops[ op_id ] = prog.get( target.data ).index;
+
+                if ( err = require( token::eol ) )
+                    return err;
+            }
+        }
+
         return nullptr;
     }
 

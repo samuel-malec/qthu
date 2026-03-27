@@ -9,9 +9,6 @@
 #include "brick-min"
 
 #include "lexer.hpp"
-#include "signature.hpp"
-#include "structure.hpp"
-#include "function.hpp"
 
 namespace cthu
 {
@@ -22,6 +19,15 @@ struct atom
 
     std::strong_ordering operator<=>( const atom& o ) const = default;
     bool operator==( const atom& o ) const = default;
+};
+
+struct type_t {};
+using type_ptr = type_t *;
+
+struct inout_t
+{
+    enum { in, out } direction;
+    type_ptr type;
 };
 
 struct sig_def_t
@@ -37,6 +43,36 @@ struct signature_t
 };
 
 using signature_ptr = signature_t*;
+
+struct insn_t
+{
+    atom structure, operation;
+    std::vector< atom > args;
+};
+
+struct function_t
+{
+    std::vector< uint32_t > in;
+    std::vector< uint32_t > out;
+    std::vector< insn_t > body;
+};
+
+using function_ptr = function_t *;
+
+struct sig_instance_t
+{
+    uint32_t signature = 0;
+    std::vector< uint32_t > args;
+};
+
+struct structure_t
+{
+    std::vector< sig_instance_t > signatures;
+    std::map< uint32_t, uint32_t > builtin_ops;
+    std::map< uint32_t, function_t > functions;
+};
+
+using structure_ptr = structure_t *;
 
 struct symtab
 {
@@ -93,12 +129,6 @@ struct symtab
     {
         return get_structure( get( name ) );
     }
-};
-
-struct insn_t
-{
-    atom structure, operation;
-    std::vector< atom > args;
 };
 
 struct diag_base : brq::refcount_base<>
@@ -162,7 +192,7 @@ struct reader : token_sink
         return [&]( token t ) { return prog.get( t.data ); };
     }
 
-    function_t read_function();
+    diag read_function( function_t & );
     diag read_name( auto *&out, auto& map );
     diag read_ident_list( auto& out, auto f, std::string_view delim );
 
