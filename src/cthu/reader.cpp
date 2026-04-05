@@ -165,7 +165,7 @@ namespace cthu
             ( err = require( token::bracket, "]" ) );
 
             if ( !err )
-                out.inherits.emplace_back( key, args );
+                out.inherits.emplace_back( key, std::move( args ) );
 
             if ( !err && peek( token::punct, "," ) )
                 fetch();
@@ -252,10 +252,10 @@ namespace cthu
         }
 
         for ( auto a : in )
-            fn.in.push_back( a.index );
+            fn.in.push_back( a );
 
         for ( auto a : out )
-            fn.out.push_back( a.index );
+            fn.out.push_back( a );
 
         skip( token::eol );
 
@@ -275,7 +275,6 @@ namespace cthu
 
             auto s = fetch();
             auto o = fetch();
-
             if ( s.cat != token::ident || o.cat != token::ident )
                 return error( s, "expected instruction as: structure operation in... → out..." );
 
@@ -283,28 +282,21 @@ namespace cthu
             insn.structure = prog.get( s.data );
             insn.operation = prog.get( o.data );
 
-            std::vector< atom > in_args;
-            if ( auto err = read_ident_list( in_args, get_atom(), "" ) )
+            if ( auto err = read_ident_list( insn.in, get_atom(), "" ) )
                 return err;
 
-            std::vector< atom > out_args;
             if ( peek( token::arrow ) )
             {
                 fetch();
-                if ( auto err = read_ident_list( out_args, get_atom(), "" ) )
+                if ( auto err = read_ident_list( insn.out, get_atom(), "" ) )
                     return err;
 
-                if ( out_args.empty() )
-                    return error( o, "operation must have at least one output parameter" );
-            }
-            else
-            {
-                if ( in_args.empty() )
-                    return error( o, "operation must have at least one input or output parameter" );
+                if ( insn.out.empty() )
+                    return error( o, "operation must have at least one output parameter after →" );
             }
 
-            insn.args.insert( insn.args.end(), in_args.begin(), in_args.end() );
-            insn.args.insert( insn.args.end(), out_args.begin(), out_args.end() );
+            else if ( insn.in.empty() )
+                return error( o, "operation must have at least one input or output parameter" );
 
             if ( auto err = require( token::eol ) )
                 return err;
@@ -330,20 +322,16 @@ namespace cthu
                 return error( sig, "unknown signature" );
 
             sig_instance_t inst;
-            inst.signature = prog.get( sig.data ).index;
+            inst.signature = prog.get( sig.data );
 
             if ( auto err = require( token::bracket, "[" ) )
                 return err;
-            
-            std::vector< atom > args;
-            if ( auto err = read_ident_list( args, get_atom(), "," ) )
+
+            if ( auto err = read_ident_list( inst.args, get_atom(), "," ) )
                 return err;
 
             if ( auto err = require( token::bracket, "]" ) )
                 return err;
-            
-            for ( auto a : args )
-                inst.args.push_back( a.index );
 
             out.signatures.push_back( std::move( inst ) );
 
@@ -375,7 +363,7 @@ namespace cthu
             if ( err = require( token::punct, "=" ) )
                 return err;
 
-            auto op_id = prog.get( op.data ).index;
+            atom op_atom = prog.get( op.data );
 
             if ( peek( token::lambda ) )
             {
@@ -383,7 +371,7 @@ namespace cthu
                 function_t fn;
                 if ( err = read_function( fn ) )
                     return err;
-                out.functions[ op_id ] = std::move( fn );
+                out.functions[ op_atom ] = std::move( fn );
             }
             else
             {
@@ -391,8 +379,7 @@ namespace cthu
                 if ( target.cat != token::ident )
                     return error( target, "expected builtin operation or lambda" );
 
-                out.builtin_ops[ op_id ] = prog.get( target.data ).index;
-
+                out.builtin_ops[ op_atom ] = prog.get( target.data );
                 if ( err = require( token::eol ) )
                     return err;
             }

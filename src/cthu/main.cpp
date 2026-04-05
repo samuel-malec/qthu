@@ -6,8 +6,9 @@
 
 #include "../common/file.hpp"
 #include "reader.hpp"
+#include "ir.hpp"
 
-using config = std::tuple< std::string, std::string >;
+using config = std::pair< std::string, std::string >;
 namespace fs = std::filesystem;
 
 config parse_args( int argc, char* const* argv )
@@ -57,7 +58,6 @@ void throw_on_diag( cthu::diag err )
     throw std::runtime_error( std::string( b.data() ) );
 }
 
-
 int main( int argc, char* const* argv )
 {
     using namespace cthu;
@@ -76,8 +76,10 @@ int main( int argc, char* const* argv )
         throw_on_diag( parse_source( prelude, st ) );
         throw_on_diag( parse_source( builtins, st ) );
         throw_on_diag( parse_source( input, st ) );
-
-        std::cout << "parse complete\n";
+        print_parsed_program( st );
+        
+        auto fn_reg = build_from_symtab( st );
+        print_function_registry( fn_reg, st );
     }
     catch( const std::exception& e )
     {

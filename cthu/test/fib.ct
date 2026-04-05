@@ -2,7 +2,7 @@ structure fib
 (
     rec = λ a b i → out
     (
-        w₃₂   dup  b     → b₁ a'
+        i₃₂   dup  b     → b₁ a'
         i₃₂   add  b₁ a  → b'
 
         i₃₂   cons_1     → one
@@ -14,16 +14,16 @@ structure fib
 
     base = λ a b i → out
     (
-        w₃₂ drop a
-        w₃₂ drop i
-        w₃₂ move b → out
+        i₃₂ drop a
+        i₃₂ drop i
+        i₃₂ move b → out
     )
 
     frame = λ A B a b i → out
     (
-        w₃₂ fork a → a₁ a₂
-        w₃₂ fork b → b₁ b₂
-        w₃₂ fork i → i₁ i₂
+        i₃₂ fork a → a₁ a₂
+        i₃₂ fork b → b₁ b₂
+        i₃₂ fork i → i₁ i₂
 
         fᵢᵢᵢⁱ call A a₁ b₁ i₁ → out₁
         fᵢᵢᵢⁱ call B a₂ b₂ i₂ → out₂
@@ -34,7 +34,7 @@ structure fib
     loop = λ a b i → out
     (
         i₃₂ cons_0      → zero
-        w₃₂ dup i       → i₁ i₂
+        i₃₂ dup i       → i₁ i₂
         i₃₂ eq? i₁ zero → cmp
 
         bool dup cmp   → cmp₁ cmp₂

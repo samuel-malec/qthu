@@ -65,27 +65,33 @@ signature simple[ T, S, B ] : affine[ T, S, B ]
 
 signature logical[ B ]
 (
+    dup ∷ B     → B × B
     not ∷ B     → B
     and ∷ B × B → B
     or  ∷ B × B → B
     xor ∷ B × B → B
+    assert ∷ B  → ∅
 )
 
 signature f₁¹[ F, S, B, I, O ] : simple[ F, S, B ]
 (
     call ∷ F × I → O
+    opt  ∷ B × F → F
+    join ∷ F × F × F → F
 )
 
 signature f₃¹[ F, S, B, I₁, I₂, I₃, O ] : simple[ F, S, B ]
 (
     call ∷ F × I₁ × I₂ × I₃ → O
+    opt  ∷ B × F → F
+    join ∷ F × F × F → F
 )
 
 signature t₁[ F, S, B, T ] : f₁¹[ F, S, B, T, T ]
 (
 )
 
-signature arithmetic[ T, B ]
+signature arithmetic[ T, S, B ] : simple[ T, S, B ]
 (
     add  ∷ T × T → T
     sub  ∷ T × T → T

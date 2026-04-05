@@ -1,5 +1,4 @@
 #pragma once
-
 #include <compare>
 #include <array>
 #include <vector>

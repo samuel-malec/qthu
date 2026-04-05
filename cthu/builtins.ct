@@ -6,7 +6,6 @@ structure w₃₂ : simple[ w₃₂, stck ]
     dup  = builtin_bv32dup
     drop = builtin_bv32drop
     move = builtin_bv32move
-    fork = builtin_bv32fork
 
     push = builtin_bv32push
     pop  = builtin_bv32pop
@@ -14,36 +13,20 @@ structure w₃₂ : simple[ w₃₂, stck ]
 
 structure bool : logical[ bool ]
 (
-    dup = builtin_bool_dup
     not = builtin_bool_not
     and = builtin_bool_and
     or  = builtin_bool_or
     xor = builtin_bool_xor
-    assert = builtin_bool_assert
-)
-
-structure fᵢⁱ : f₁¹[ func, i₃₂, bool, i₃₂, i₃₂ ]
-(
-    call = builtin_func_call
-    join = builtin_func_join
-    opt  = builtin_func_opt
 )
 
 structure fᵢᵢᵢⁱ : f₃¹[ func, i₃₂, i₃₂, i₃₂, i₃₂ ]
 (
     call = builtin_func_call
     join = builtin_func_join
-    opt  = builtin_func_opt
 )
 
-structure i₃₂ : arithmetic[ w₃₂, stck, bool ]
+structure i₃₂ : arithmetic[ w₃₂, bool ]
 (
-    dup  = builtin_bv32dup
-    fork = builtin_bv32dup
-    drop = builtin_bv32drop
-    move = builtin_bv32move
-    join = builtin_bv32join
-
     add = builtin_bv32add
     sub = builtin_bv32sub
     mul = builtin_bv32mul
@@ -59,22 +42,10 @@ structure i₃₂ : arithmetic[ w₃₂, stck, bool ]
 
     shl = builtin_bv32shl
     shr = builtin_bv32ashr
-
-    cons_0   = builtin_bv32cons_0
-    cons_1   = builtin_bv32cons_1
-    cons_2   = builtin_bv32cons_2
-    cons_16  = builtin_bv32cons_16
-    cons_987 = builtin_bv32cons_987
 )
 
-structure u₃₂ : arithmetic[ w₃₂, stck, bool ]
+structure u₃₂ : arithmetic[ w₃₂, bool ]
 (
-    dup  = builtin_bv32dup
-    fork = builtin_bv32dup
-    drop = builtin_bv32drop
-    move = builtin_bv32move
-    join = builtin_bv32join
-
     add = builtin_bv32add
     sub = builtin_bv32sub
     mul = builtin_bv32mul

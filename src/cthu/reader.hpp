@@ -1,135 +1,18 @@
 #pragma once
 
 #include <format>
-#include <vector>
-#include <map>
 #include <iostream>
+#include <map>
+#include <vector>
 
 #include "brick-ptr"
 #include "brick-min"
-
 #include "lexer.hpp"
+#include "symtab.hpp"
+#include "types.hpp"
 
 namespace cthu
 {
-
-struct atom
-{
-    uint32_t index = 0;
-
-    std::strong_ordering operator<=>( const atom& o ) const = default;
-    bool operator==( const atom& o ) const = default;
-};
-
-struct type_t {};
-using type_ptr = type_t *;
-
-struct inout_t
-{
-    enum { in, out } direction;
-    type_ptr type;
-};
-
-struct sig_def_t
-{
-    std::vector< atom > in, out;
-};
-
-struct signature_t
-{
-    std::vector< atom > args;
-    std::vector< std::pair< atom, std::vector< atom > > > inherits;
-    std::map < atom, sig_def_t > defs;
-};
-
-using signature_ptr = signature_t*;
-
-struct insn_t
-{
-    atom structure, operation;
-    std::vector< atom > args;
-};
-
-struct function_t
-{
-    std::vector< uint32_t > in;
-    std::vector< uint32_t > out;
-    std::vector< insn_t > body;
-};
-
-using function_ptr = function_t *;
-
-struct sig_instance_t
-{
-    uint32_t signature = 0;
-    std::vector< uint32_t > args;
-};
-
-struct structure_t
-{
-    std::vector< sig_instance_t > signatures;
-    std::map< uint32_t, uint32_t > builtin_ops;
-    std::map< uint32_t, function_t > functions;
-};
-
-using structure_ptr = structure_t *;
-
-struct symtab
-{
-    std::map< std::string, uint32_t, std::less<> > map;
-
-    std::map< atom, type_t > types;
-    std::map< atom, signature_t > signatures;
-    std::map< atom, structure_t > structures;
-
-    type_ptr get_type( atom a ) { return &types[ a ]; }
-    signature_ptr get_signature( atom a ) { return &signatures[ a ]; }
-    structure_ptr get_structure( atom a ) { return &structures[ a ]; }
-
-    atom get( std::string_view name )
-    {
-        atom rv;
-
-        if ( auto it = map.find( name ); it != map.end() )
-            rv.index = it->second;
-        else
-        {
-            rv.index = map.size();
-            map.emplace( name, rv.index );
-        }
-        return rv;
-    }
-
-    bool has_type( std::string_view name )
-    {
-        return types.contains( get( name ) );
-    }
-
-    bool has_structure( std::string_view name )
-    {
-        return structures.contains( get( name ) );
-    }
-
-    bool has_signature( std::string_view name )
-    {
-        return signatures.contains( get( name ) );
-    }
-
-    type_ptr get_type( std::string_view name )
-    {
-        return get_type( get( name ) );
-    }
-
-    signature_ptr get_signature( std::string_view name )
-    {
-        return get_signature( get( name ) );
-    }
-
-    structure_ptr get_structure( std::string_view name )
-    {
-        return get_structure( get( name ) );
-    }
-};
 
 struct diag_base : brq::refcount_base<>
 {

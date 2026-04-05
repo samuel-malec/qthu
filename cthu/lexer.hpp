@@ -1,17 +1,13 @@
 #pragma once
 
-#include <cassert>
-#include <iostream>
-#include <memory>
 #include <string>
 #include <string_view>
-#include <vector>
+#include <brick-ptr>
+#include <brick-string>
 
-#include "../common/utf8.hpp"
-
-namespace cthu
+namespace cthu::reader
 {
-    struct source_file 
+    struct source_file : brq::refcount_base<>
     {
         std::string name, data;
 
@@ -21,7 +17,7 @@ namespace cthu
         {}
     };
 
-    using source_ptr = std::shared_ptr< source_file >;
+    using source_ptr = brq::refcount_ptr< source_file >;
 
     struct location
     {
@@ -62,12 +58,11 @@ namespace cthu
             case token::bracket:     return stream << "bracket";
             case token::paren:       return stream << "paren";
         }
-        return stream << "unknown";
     }
 
     auto &operator<<( auto &stream, const token &tok )
     {
-        return stream << "(" << tok.cat << ") " << tok.data;
+        return stream << "(" << tok.cat << ") " << brq::printable( tok.data );
     }
 
     struct token_sink
@@ -100,19 +95,19 @@ namespace cthu
 
         char32_t peek() const
         {
-            assert( ptr < data.size() );
-            auto [ ch, rem ] = decode_utf8( data.substr( ptr ) );
+            ASSERT_LT( ptr, data.size() );
+            auto [ ch, rem ] = brq::decode_utf8( data.substr( ptr ) );
             return ch;
         }
 
         void shift( int n = 1 )
         {
             auto all = data.substr( ptr );
-            auto [ ch, rem ] = decode_utf8( all );
+            auto [ ch, rem ] = brq::decode_utf8( all );
             ptr += all.size() - rem.size();
 
             if ( n > 1 )
-                return shift( n - 1 );
+                [[clang::musttail]] return shift( n - 1 );
         }
 
         bool empty() const { return ptr == data.size(); }
@@ -151,7 +146,7 @@ namespace cthu
             {
                 if ( all.empty() )
                     return false;
-                auto [ ch, rem ] = decode_utf8( all );
+                auto [ ch, rem ] = brq::decode_utf8( all );
                 if ( ch != expect )
                     return false;
                 all = rem;
@@ -220,7 +215,6 @@ namespace cthu
         }
 
         void push() { push( cnow ); }
-
         lexer( source_ptr d, token_sink &out )
             : doc{ d }, data{ d->data }, out{ out }
         {
@@ -231,4 +225,16 @@ namespace cthu
         bool compatible( cat c, char32_t ch );
         void next();
     };
+
+    template< typename lexer >
+    std::vector< token > lex( std::string_view data )
+    {
+        token_vec out;
+        lexer l( data, out );
+
+        while ( !l.empty() )
+            l.next();
+
+        return std::move( out.toks );
+    }
 }
