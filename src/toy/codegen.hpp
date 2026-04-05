@@ -13,7 +13,7 @@
 #include "../asm/asmbuilder.hpp"
 #include "../asm/op_builders.hpp"
 
-namespace jsc
+namespace toy
 {
 
 using asbuilder = qthu::asmbuilder;

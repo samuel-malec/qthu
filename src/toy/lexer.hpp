@@ -11,7 +11,7 @@
 #include "../common/lexer_base.hpp"
 #include "../common/limits.hpp"
 
-namespace jsc
+namespace toy
 {
 
 static const std::set< std::string_view > punct = {

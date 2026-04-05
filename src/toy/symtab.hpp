@@ -5,7 +5,7 @@
 #include <cstdint>
 #include "ast.hpp"
 
-namespace jsc
+namespace toy 
 {
 
 struct loctab

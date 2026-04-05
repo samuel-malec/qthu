@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace jsc
+namespace toy
 {
 
 struct token

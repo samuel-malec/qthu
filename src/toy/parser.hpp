@@ -10,7 +10,7 @@
 #include "ast.hpp"
 #include "token.hpp"
 
-namespace jsc
+namespace toy
 {
 
 struct parser

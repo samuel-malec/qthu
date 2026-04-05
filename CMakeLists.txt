@@ -33,16 +33,16 @@ target_link_libraries(bcrun
 )
 
 # compiler for a toy language
-add_executable(jsc)
-target_sources(jsc
+add_executable(toy)
+target_sources(toy
     PRIVATE
-    src/jsc/jsc.cpp
+    src/toy/toy.cpp
     src/asm/qassembly.cpp
     src/asm/instruction.cpp
     src/asm/directive.cpp
 )
 
-target_link_libraries(jsc
+target_link_libraries(toy
     PRIVATE
     quickjs-libc
 )

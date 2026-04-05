@@ -16,7 +16,7 @@ config parse_args( int argc, char* const* argv )
     std::string out_name = "a.out";
 
     if ( argc == 0 )
-        throw std::runtime_error( "Usage: ./jsc in_name [-o out.name]" );
+        throw std::runtime_error( "Usage: ./toy in_name [-o out.name]" );
 
     std::string in_name = argv[ 0 ];
     argc--;
@@ -25,7 +25,7 @@ config parse_args( int argc, char* const* argv )
         return { in_name, argv[ 1 ] };
 
     if ( argc != 0 )
-        throw std::runtime_error( "Usage: ./jsc in_name [-o out.name]" );
+        throw std::runtime_error( "Usage: ./toy in_name [-o out.name]" );
 
     return { in_name, out_name };
 }
@@ -38,10 +38,10 @@ int main( int argc, char* const* argv )
     {
         const auto& [ in_name, out_name ] = parse_args( argc, argv );
         std::string content = read_file( in_name );
-        const auto& tokens = jsc::lex( content );
-        const auto ast = jsc::parse( tokens );
+        const auto& tokens = toy::lex( content );
+        const auto ast = toy::parse( tokens );
         qthu::asmbuilder builder;
-        jsc::generate( builder, ast );
+        toy::generate( builder, ast );
         std::cout << builder.print_asm() << '\n';
         qthu::program prog = builder.build();
         prog.write_binary( out_name );
