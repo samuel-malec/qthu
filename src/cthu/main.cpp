@@ -76,11 +76,11 @@ int main( int argc, char* const* argv )
         throw_on_diag( parse_source( prelude, st ) );
         throw_on_diag( parse_source( builtins, st ) );
         throw_on_diag( parse_source( input, st ) );
-        print_parsed_program( st );
         
-        auto fn_reg = build_from_symtab( st );
-        print_function_registry( fn_reg, st );
+        cthuir cir{ st };
+        cir.lower();
     }
+
     catch( const std::exception& e )
     {
         std::cerr << "\033[1;31mexception:\033[m " << e.what() << "\n";

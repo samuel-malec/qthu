@@ -378,7 +378,7 @@ namespace cthu
                 auto target = fetch();
                 if ( target.cat != token::ident )
                     return error( target, "expected builtin operation or lambda" );
-
+                
                 out.builtin_ops[ op_atom ] = prog.get( target.data );
                 if ( err = require( token::eol ) )
                     return err;
