@@ -6,7 +6,7 @@
 #include <unordered_set>
 #include <optional>
 
-namespace qthu
+namespace qthu::as
 {
 
 struct opcode_info

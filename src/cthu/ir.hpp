@@ -11,7 +11,7 @@
 #include "symtab.hpp"
 #include "types.hpp"
 
-namespace cthu
+namespace qthu::cthu
 {
 
 struct insn_key
@@ -27,7 +27,6 @@ struct insn_key
     }
 };
 
-// todo maybe rename this ? 
 struct resolved_insn
 {
     enum class kind_t
@@ -42,11 +41,16 @@ struct resolved_insn
     kind_t kind = kind_t::builtin;
     atom structure{};
     atom operation{};
+
     atom target{};
     uint32_t target_fn_id = std::numeric_limits< uint32_t >::max();
     std::vector< atom > in;
     std::vector< atom > out;
+};
 
+struct lowered_insn
+{
+    resolved_insn resolved;
     std::vector< uint32_t > slots_in;
     std::vector< uint32_t > slots_out;
 };
@@ -57,23 +61,25 @@ struct fn_meta
     insn_key key{};
     std::vector< atom > in;
     std::vector< atom > out;
+
     std::vector< resolved_insn > body;
+
+    std::vector< lowered_insn > lowered;
+
+    std::vector< uint32_t > sig_in_slots;
+    std::vector< uint32_t > sig_out_slots;
     uint32_t slot_size = 0;
 };
 
-struct cthuir
+struct program
 {
     symtab& st;
-    std::vector< fn_meta > fns{};
+    std::vector< fn_meta > fns{}; 
     std::map< insn_key, uint32_t > key_fn{};
     std::map< insn_key, atom > builtins{};
 
-    // initial pass to resolve all function names etc.
-    void build_fns()
+    void resolve_fns()
     {
-        fns.clear();
-        key_fn.clear();
-
         for ( const auto& [ struct_atom, structure ] : st.structures )
         {
             for ( const auto& [ func_atom, func ] : structure.functions )
@@ -91,7 +97,7 @@ struct cthuir
         }
     }
 
-    void load_builtins()
+    void resolve_builtins()
     {
         for ( const auto& [ satom, structure ] : st.structures )
             for ( const auto& [ op, builtin_name ] : structure.builtin_ops )
@@ -102,54 +108,91 @@ struct cthuir
     {
         for ( auto& meta : fns )
         {
-            auto& structure = st.structures.at( meta.key.stru );
-            auto& function = structure.functions.at( meta.key.op );
+            std::map< atom, std::vector< uint32_t > > versions;
+            uint32_t next_slot = 0;
+            std::vector< uint32_t > free_slots;
 
-            uint32_t max_slots = 0;
-            std::map< atom, std::vector< uint32_t > > stack_slots;
-            
-            // todo this is kinda iffy
-            uint32_t max_slot_num = 512;
-            std::vector< uint32_t > free_slots{};
-            for ( int i = 511; i >= 0; -- i )
-                free_slots.push_back( i );
-            
-            auto aloc_slot = [ &max_slots, &max_slot_num, &free_slots, &stack_slots ] 
-                             ( std::vector< uint32_t>& slot_sink , atom stck_name )
+            auto alloc_slot = [&]() -> uint32_t
             {
-                uint32_t slot = free_slots.empty() ? max_slot_num++ : free_slots.back();
-                slot_sink.push_back( slot );
-                if ( free_slots.empty() )
+                if ( !free_slots.empty() )
+                {
+                    const uint32_t s = free_slots.back();
                     free_slots.pop_back();
-                stack_slots[ stck_name ].push_back( slot ); 
-                max_slots = std::max( max_slots, slot );
+                    return s;
+                }
+                return next_slot++;
             };
 
-            auto free_slot = [ &free_slots, &stack_slots ] 
-                            ( std::vector< uint32_t >& slot_sink, atom stck_name )
+            auto pop_version = [&]( atom name ) -> uint32_t
             {
-                uint32_t slot = stack_slots[ stck_name ].back();
-                slot_sink.push_back( slot );
-                free_slots.push_back( slot );
-                stack_slots[ stck_name ].pop_back();
+                auto it = versions.find( name );
+                if ( it == versions.end() || it->second.empty() )
+                        throw std::runtime_error(
+                        std::string( "slot alloc underflow for name: " ) +
+                        std::string( st.name_of( name ) ) );
+                
+                const uint32_t s = it->second.back();
+                it->second.pop_back();
+                return s;
             };
 
-            std::vector< uint32_t > dev_null{};
-            for ( auto& in_atom : meta.in )
-                aloc_slot( dev_null, in_atom );
-
-            for ( auto& insn : meta.body )
+            auto push_version = [&]( atom name, uint32_t slot )
             {
-                for ( auto& iatom : insn.in )
-                    free_slot( insn.slots_in, iatom);
+                versions[name].push_back( slot );
+            };
 
-                for ( auto& oatom : insn.out )
-                    aloc_slot( insn.slots_out, oatom );
+            for ( const auto& p : meta.in )
+            {
+                const uint32_t s = alloc_slot();
+                push_version( p, s );
+                meta.sig_in_slots.push_back( s );
             }
+
+            for ( const auto& insn : meta.body )
+            {
+                lowered_insn low;
+                low.resolved = insn;
+
+                std::vector< uint32_t > to_free;
+                to_free.reserve( insn.in.size() );
+
+                for ( const auto& iatom : insn.in )
+                {
+                    const uint32_t s = pop_version( iatom );
+                    low.slots_in.push_back( s );
+                    to_free.push_back( s );
+                }
+
+                for ( const uint32_t s : to_free )
+                    free_slots.push_back( s );
+
+                for ( const auto& oatom : insn.out )
+                {
+                    const uint32_t s = alloc_slot();
+                    push_version( oatom, s );
+                    low.slots_out.push_back( s );
+                }
+
+                meta.lowered.push_back( std::move( low ) );
+            }
+
+            for ( const auto& o : meta.out )
+            {
+                auto it = versions.find( o );
+                if ( it == versions.end() || it->second.empty() )
+                {
+                    throw std::runtime_error(
+                        std::string( "function output name not produced: " ) +
+                        std::string( st.name_of( meta.key.stru ) ) + "::" +
+                        std::string( st.name_of( meta.key.op ) ) + " -> " +
+                        std::string( st.name_of( o ) ) );
+                }
+                meta.sig_out_slots.push_back( it->second.back() );
+            }
+
+            meta.slot_size = next_slot;
         }
     }
-
-    resolved_insn build_resolved( const insn_t& insn, resolved_insn::kind_t kind );
 
     resolved_insn classify( const insn_t& insn ) const
     {
@@ -225,77 +268,59 @@ struct cthuir
             auto& structure = st.structures.at( meta.key.stru );
             auto& function = structure.functions.at( meta.key.op );
 
-            meta.body.clear();
-            meta.body.reserve( function.body.size() );
-
             for ( const auto& insn : function.body )
                 meta.body.push_back( classify( insn ) );
         }
     }
 
-    void print() const
-    {
-        std::cout << "\nFunction Registry (" << fns.size() << " functions):\n";
-        for ( const auto& metadata : fns )
-        {
-            std::cout << "  [" << metadata.id << "] "
-                      << st.name_of( metadata.key.stru ) << "::"
-                      << st.name_of( metadata.key.op ) << '\n';
-
-            for ( const auto& insn : metadata.body )
-            {
-                std::cout << "    - ";
-                switch ( insn.kind )
-                {
-                    case resolved_insn::kind_t::builtin:
-                        std::cout << "builtin ";
-                        break;
-                    case resolved_insn::kind_t::fn_ref:
-                        std::cout << "fn_ref ";
-                        break;
-                    case resolved_insn::kind_t::fn_call:
-                        std::cout << "fn_call ";
-                        break;
-                    case resolved_insn::kind_t::fn_opt:
-                        std::cout << "fn_opt ";
-                        break;
-                    case resolved_insn::kind_t::fn_join:
-                        std::cout << "fn_join ";
-                        break;
-                }
-
-                std::cout << st.name_of( insn.structure ) << "::"
-                          << st.name_of( insn.operation ) << " -> ";
-
-                if ( insn.kind == resolved_insn::kind_t::builtin )
-                    std::cout << st.name_of( insn.target );
-                else if ( insn.kind == resolved_insn::kind_t::fn_ref )
-                    std::cout << "fn#" << insn.target_fn_id << " (" << st.name_of( insn.target ) << ")";
-                else if ( insn.kind == resolved_insn::kind_t::fn_call )
-                    std::cout << "call";
-                else if ( insn.kind == resolved_insn::kind_t::fn_opt )
-                    std::cout << "opt";
-                else
-                    std::cout << "join";
-
-                std::cout << "  slots_in: [ ";
-                for ( int s : insn.slots_in )
-                    std::cout<< s << ' ';
-                std::cout << "] slots_out: [ ";
-                for ( int s : insn.slots_out )
-                    std::cout << s << " ";
-                std::cout << "]\n";
-            }
-        }
-    }
-
     void lower()
     {
-        build_fns();
-        load_builtins();
+        resolve_fns();
+        resolve_builtins();
         build_fn_bodies();
         build_slots();
         print();
+    }
+
+    void print() const
+    {
+        for ( auto& fn : fns )
+        {
+            std::cout << "fn " << st.name_of( fn.key.stru ) << "::" << st.name_of( fn.key.op ) << '\n';
+            for ( auto& l : fn.lowered )
+            {
+                std::cout << "      ";
+                switch (l.resolved.kind)
+                {
+                case cthu::resolved_insn::kind_t::builtin:
+                    std::cout << "(builtin)";
+                    break;
+                case cthu::resolved_insn::kind_t::fn_call:
+                    std::cout << "(call)";
+                    break;
+                case cthu::resolved_insn::kind_t::fn_join:
+                    std::cout << "(join)";
+                    break;
+                case cthu::resolved_insn::kind_t::fn_opt:
+                    std::cout << "(opt)";
+                    break;
+                case cthu::resolved_insn::kind_t::fn_ref:
+                    std::cout << "(fn_ref)";
+                    break;
+                default:
+                    std::cout << "(unknown)";
+                    break;
+                }
+
+                std::cout << " " << st.name_of( l.resolved.target ) << " in: [ ";
+                for ( auto& in : l.slots_in )
+                    std::cout << in << " ";
+                std::cout << "] out: [ ";
+                for ( auto& out : l.slots_out )
+                    std::cout << out << " ";
+                std::cout << "]\n";
+            }
+        }
     }
 };
 

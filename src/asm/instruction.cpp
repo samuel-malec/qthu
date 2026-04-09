@@ -5,7 +5,7 @@
 #include "opcodes.hpp"
 #include "../common/lexer_base.hpp"
 
-namespace qthu
+namespace qthu::as
 {
 
 instruction instruction::from_string( const std::string_view sv )

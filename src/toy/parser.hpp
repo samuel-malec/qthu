@@ -10,7 +10,7 @@
 #include "ast.hpp"
 #include "token.hpp"
 
-namespace toy
+namespace qthu::toy
 {
 
 struct parser

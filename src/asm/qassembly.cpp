@@ -9,7 +9,7 @@
 #include "../bytecode/program.hpp"
 #include "../common/parser_base.hpp"
 
-namespace qthu
+namespace qthu::as
 {
 
 void assembly::add_document( const document& doc )
@@ -108,9 +108,9 @@ symtab_t function_assembly::collect_labels() const
     return labels;
 }
 
-function_bytecode function_assembly::assemble() const
+bc::function_bytecode function_assembly::assemble() const
 {
-    function_bytecode func;
+    bc::function_bytecode func;
     func.name = name;
     func.arg_count = arg_count;
     func.local_count = local_count;
@@ -138,9 +138,9 @@ function_bytecode function_assembly::assemble() const
     return func;
 }
 
-program assembly::assemble()
+bc::program assembly::assemble()
 {
-    program prog;
+    bc::program prog;
     for ( const auto& func_asm : functions )
     {
         auto func_bc = func_asm.assemble();
@@ -168,7 +168,7 @@ std::string function_assembly::print() const
             case item::label:
                 result += std::format( "  [label] {}:\n", item.name );
                 break;
-        }
+            }
     }
     return result;
 }

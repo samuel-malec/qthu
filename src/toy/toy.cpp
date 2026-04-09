@@ -32,6 +32,7 @@ config parse_args( int argc, char* const* argv )
 
 int main( int argc, char* const* argv )
 {
+    using namespace qthu;
     --argc;
     ++argv;
     try
@@ -39,11 +40,11 @@ int main( int argc, char* const* argv )
         const auto& [ in_name, out_name ] = parse_args( argc, argv );
         std::string content = read_file( in_name );
         const auto& tokens = toy::lex( content );
-        const auto ast = toy::parse( tokens );
-        qthu::asmbuilder builder;
-        toy::generate( builder, ast );
+        const auto ast = parse( tokens );
+        as::asmbuilder builder;
+        generate( builder, ast );
         std::cout << builder.print_asm() << '\n';
-        qthu::program prog = builder.build();
+        bc::program prog = builder.build();
         prog.write_binary( out_name );
     }
     catch ( const std::exception& e )

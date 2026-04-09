@@ -3,7 +3,7 @@
 
 #include "reader.hpp"
 
-namespace cthu
+namespace qthu::cthu
 {
     diag reader::error( token t, auto... msg )
     {

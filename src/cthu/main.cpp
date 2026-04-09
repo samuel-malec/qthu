@@ -4,12 +4,16 @@
 #include <cstring>
 #include <filesystem>
 
+#include "../asm/asmbuilder.hpp"
 #include "../common/file.hpp"
+#include "codegen.hpp"
 #include "reader.hpp"
 #include "ir.hpp"
 
 using config = std::pair< std::string, std::string >;
 namespace fs = std::filesystem;
+
+using namespace qthu;
 
 config parse_args( int argc, char* const* argv )
 {
@@ -60,25 +64,26 @@ void throw_on_diag( cthu::diag err )
 
 int main( int argc, char* const* argv )
 {
-    using namespace cthu;
+    using namespace qthu;
     --argc;
     ++argv;
 
     try
     {
         const auto& [ in_name, out_name ] = parse_args( argc, argv );
-        (void) out_name;
 
-        symtab st;
+        cthu::symtab st;
         auto input = fs::path( in_name );
         auto [ prelude, builtins ] = support_files_for( input );
 
         throw_on_diag( parse_source( prelude, st ) );
         throw_on_diag( parse_source( builtins, st ) );
         throw_on_diag( parse_source( input, st ) );
-        
-        cthuir cir{ st };
-        cir.lower();
+
+        cthu::program prog{ st };
+        prog.lower();
+        as::asmbuilder builder{};
+        lower_to_asm( builder, prog );
     }
 
     catch( const std::exception& e )

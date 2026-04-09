@@ -11,7 +11,7 @@
 #include "../common/lexer_base.hpp"
 #include "../common/limits.hpp"
 
-namespace toy
+namespace qthu::toy
 {
 
 static const std::set< std::string_view > punct = {

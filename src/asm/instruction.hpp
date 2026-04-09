@@ -6,7 +6,7 @@
 #include <vector>
 #include <stdexcept>
 
-namespace qthu
+namespace qthu::as
 {
 
 using symtab_t = std::map< std::string, uint32_t >;

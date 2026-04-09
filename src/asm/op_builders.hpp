@@ -12,14 +12,14 @@ namespace qthu::as
 
 struct emitted_instruction
 {
-    qthu::instruction instr;
+    instruction instr;
 
-    operator const qthu::instruction&() const
+    operator const instruction&() const
     {
         return instr;
     }
 
-    operator qthu::instruction&&() &&
+    operator instruction&&() &&
     {
         return std::move( instr );
     }
@@ -27,43 +27,43 @@ struct emitted_instruction
 
 inline emitted_instruction make( std::string_view mnemonic )
 {
-    auto info = qthu::get_opcode_info( std::string( mnemonic ) );
+    auto info = get_opcode_info( std::string( mnemonic ) );
     if ( !info )
         throw std::runtime_error( "unknown opcode: " + std::string( mnemonic ) );
     if ( info->size != 1 )
         throw std::runtime_error( "opcode requires operand: " + std::string( mnemonic ) );
 
-    return { qthu::instruction{ .mnemonic = std::string( mnemonic ),
+    return { instruction{ .mnemonic = std::string( mnemonic ),
                                 .opcode = info->opcode,
                                 .size = info->size } };
 }
 
 inline emitted_instruction make( std::string_view mnemonic, int32_t operand )
 {
-    auto info = qthu::get_opcode_info( std::string( mnemonic ) );
+    auto info = get_opcode_info( std::string( mnemonic ) );
     if ( !info )
         throw std::runtime_error( "unknown opcode: " + std::string( mnemonic ) );
     if ( info->size == 1 )
         throw std::runtime_error( "opcode does not take operand: " + std::string( mnemonic ) );
 
-    return { qthu::instruction{ .mnemonic = std::string( mnemonic ),
+    return { instruction{ .mnemonic = std::string( mnemonic ),
                                 .opcode = info->opcode,
                                 .size = info->size,
-                                .operand = qthu::opr( static_cast< uint32_t >( operand ) ) } };
+                                .operand = opr( static_cast< uint32_t >( operand ) ) } };
 }
 
 inline emitted_instruction make_label( std::string_view mnemonic, std::string_view label )
 {
-    auto info = qthu::get_opcode_info( std::string( mnemonic ) );
+    auto info = get_opcode_info( std::string( mnemonic ) );
     if ( !info )
         throw std::runtime_error( "unknown opcode: " + std::string( mnemonic ) );
     if ( info->size == 1 )
         throw std::runtime_error( "opcode does not take operand: " + std::string( mnemonic ) );
 
-    return { qthu::instruction{ .mnemonic = std::string( mnemonic ),
+    return { instruction{ .mnemonic = std::string( mnemonic ),
                                 .opcode = info->opcode,
                                 .size = info->size,
-                                .address = qthu::addr( label ),
+                                .address = addr( label ),
                                 .has_address = true } };
 }
 

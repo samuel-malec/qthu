@@ -2,7 +2,6 @@
 
 #include <string>
 #include <vector>
-#include <cstdint>
 #include <map>
 
 #include "../bytecode/program.hpp"
@@ -10,7 +9,7 @@
 #include "directive.hpp"
 #include "instruction.hpp"
 
-namespace qthu
+namespace qthu::as
 {
 
 using symtab_t = std::map< std::string, uint32_t >;
@@ -26,8 +25,8 @@ struct function_assembly
             directive,
         } kind;
 
-        qthu::instruction instr;
-        qthu::directive dir;
+        as::instruction instr;
+        as::directive dir;
         std::string name;
 
         document::span lit;
@@ -70,7 +69,7 @@ struct function_assembly
     }
 
     symtab_t collect_labels() const;
-    function_bytecode assemble() const;
+    bc::function_bytecode assemble() const;
     std::string print() const;
 };
 
@@ -93,7 +92,7 @@ struct assembly
 
     function_assembly::item* add_line( document::span );
     void add_document( const document& );
-    program assemble();
+    bc::program assemble();
 
     std::string print() const
     {

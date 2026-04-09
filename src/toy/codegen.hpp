@@ -13,10 +13,10 @@
 #include "../asm/asmbuilder.hpp"
 #include "../asm/op_builders.hpp"
 
-namespace toy
+namespace qthu::toy
 {
 
-using asbuilder = qthu::asmbuilder;
+using asbuilder = as::asmbuilder;
 
 enum class storage
 {

@@ -59,3 +59,8 @@ target_include_directories(cthucc
     PRIVATE
     ${CMAKE_SOURCE_DIR}/bricks
 )
+
+target_link_libraries(cthucc
+    PRIVATE
+    quickjs-libc
+)

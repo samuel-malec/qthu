@@ -4,7 +4,7 @@
 #include <set>
 #include <string>
 
-namespace qthu
+namespace qthu::as
 {
 struct directive
 {
@@ -14,16 +14,10 @@ struct directive
 
     static const std::set< std::string_view > valid_directives;
 
-    static directive from_string( const std::string_view );
+    static directive from_string( std::string_view );
 
-    bool has_name() const
-    {
-        return !name.empty();
-    }
+    bool has_name() const { return !name.empty(); }
 
-    bool str_arg() const
-    {
-        return mnemonic == "function";
-    }
+    bool str_arg() const { return mnemonic == "function"; }
 };
 } // namespace qthu

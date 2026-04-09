@@ -14,7 +14,7 @@ int main( int argc, const char** argv )
 
     using namespace qthu;
     document_store docstore;
-    assembly assm;
+    as::assembly assm;
 
     const document* current_doc = nullptr;
     const char* out_name = "qthu.qbc";

@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace toy
+namespace qthu::toy
 {
 
 struct token

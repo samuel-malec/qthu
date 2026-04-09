@@ -11,7 +11,7 @@
 #include "symtab.hpp"
 #include "types.hpp"
 
-namespace cthu
+namespace qthu::cthu
 {
 
 struct diag_base : brq::refcount_base<>

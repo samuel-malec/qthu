@@ -3,7 +3,7 @@
 #include "qassembly.hpp"
 #include "op_builders.hpp"
 
-namespace qthu
+namespace qthu::as
 {
 
 struct asmbuilder
@@ -37,11 +37,11 @@ struct asmbuilder
     asmbuilder& add_instr( std::string_view text )
     {
         ensure_function();
-        current->add_instr( qthu::instruction::from_string( text ) );
+        current->add_instr( instruction::from_string( text ) );
         return *this;
     }
 
-    asmbuilder& add_instr( qthu::instruction instr )
+    asmbuilder& add_instr( instruction instr )
     {
         ensure_function();
         current->add_instr( std::move( instr ) );
@@ -53,7 +53,7 @@ struct asmbuilder
         return assm.print();
     }
 
-    qthu::program build()
+    bc::program build()
     {
         return assm.assemble();
     }

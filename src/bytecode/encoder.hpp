@@ -4,7 +4,7 @@
 #include <vector>
 #include <string>
 
-namespace qthu
+namespace qthu::bc
 {
 
 using bytes = std::vector< uint8_t >;
@@ -19,7 +19,7 @@ inline void encode_i8( bytes& buf, int8_t val )
     buf.push_back( static_cast< uint8_t >( val ) );
 }
 
-template< typename T > inline void encode_int_le( bytes& buf, T value, int width )
+template< typename T > void encode_int_le( bytes& buf, T value, int width )
 {
     auto u = static_cast< std::make_unsigned_t< T > >( value );
     for ( int i = 0; i < width; i++ )

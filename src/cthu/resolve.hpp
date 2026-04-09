@@ -7,7 +7,7 @@
 #include "types.hpp"
 #include "symtab.hpp"
 
-namespace cthu
+namespace qthu::cthu
 {
 
 struct op

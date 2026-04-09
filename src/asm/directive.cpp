@@ -4,7 +4,7 @@
 #include "directive.hpp"
 #include "../common/lexer_base.hpp"
 
-namespace qthu
+namespace qthu::as
 {
 
 const std::set< std::string_view > directive::valid_directives = { "function", "args", "locals",

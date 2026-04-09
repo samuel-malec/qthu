@@ -9,7 +9,7 @@
 #include <format>
 #include "encoder.hpp"
 
-namespace qthu
+namespace qthu::bc
 {
 
 using symtab_t = std::map< std::string, uint32_t >;

@@ -5,7 +5,7 @@
 #include <cstdint>
 #include "ast.hpp"
 
-namespace toy 
+namespace qthu::toy
 {
 
 struct loctab
