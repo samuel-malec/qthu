@@ -1,0 +1,11 @@
+function main()
+{
+   a = 5;
+   b = 10;
+   return add( a, b );
+}
+
+function add( a, b )
+{
+   return a + b;
+}
