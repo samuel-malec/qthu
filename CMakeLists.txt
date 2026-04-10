@@ -53,6 +53,9 @@ target_sources(cthucc
     src/cthu/main.cpp
     src/cthu/lexer.cpp
     src/cthu/reader.cpp
+    src/asm/qassembly.cpp
+    src/asm/instruction.cpp
+    src/asm/directive.cpp
 )
 
 target_include_directories(cthucc

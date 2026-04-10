@@ -63,9 +63,8 @@ struct fn_meta
     std::vector< atom > out;
 
     std::vector< resolved_insn > body;
-
     std::vector< lowered_insn > lowered;
-
+    
     std::vector< uint32_t > sig_in_slots;
     std::vector< uint32_t > sig_out_slots;
     uint32_t slot_size = 0;
@@ -78,7 +77,7 @@ struct program
     std::map< insn_key, uint32_t > key_fn{};
     std::map< insn_key, atom > builtins{};
 
-    void resolve_fns()
+    void collect_fns()
     {
         for ( const auto& [ struct_atom, structure ] : st.structures )
         {
@@ -97,14 +96,14 @@ struct program
         }
     }
 
-    void resolve_builtins()
+    void collect_builtins()
     {
         for ( const auto& [ satom, structure ] : st.structures )
             for ( const auto& [ op, builtin_name ] : structure.builtin_ops )
                 builtins[{ satom, op }] = builtin_name;
     }
 
-    void build_slots()
+    void aloc_slots()
     {
         for ( auto& meta : fns )
         {
@@ -261,7 +260,7 @@ struct program
         );
     }
 
-    void build_fn_bodies()
+    void resolve_instructions()
     {
         for ( auto& meta : fns )
         {
@@ -273,12 +272,12 @@ struct program
         }
     }
 
-    void lower()
+    void lower_to_ir()
     {
-        resolve_fns();
-        resolve_builtins();
-        build_fn_bodies();
-        build_slots();
+        collect_fns();
+        collect_builtins();
+        resolve_instructions();
+        aloc_slots();
         print();
     }
 
@@ -292,24 +291,24 @@ struct program
                 std::cout << "      ";
                 switch (l.resolved.kind)
                 {
-                case cthu::resolved_insn::kind_t::builtin:
-                    std::cout << "(builtin)";
-                    break;
-                case cthu::resolved_insn::kind_t::fn_call:
-                    std::cout << "(call)";
-                    break;
-                case cthu::resolved_insn::kind_t::fn_join:
-                    std::cout << "(join)";
-                    break;
-                case cthu::resolved_insn::kind_t::fn_opt:
-                    std::cout << "(opt)";
-                    break;
-                case cthu::resolved_insn::kind_t::fn_ref:
-                    std::cout << "(fn_ref)";
-                    break;
-                default:
-                    std::cout << "(unknown)";
-                    break;
+                    case cthu::resolved_insn::kind_t::builtin:
+                        std::cout << "(builtin)";
+                        break;
+                    case cthu::resolved_insn::kind_t::fn_call:
+                        std::cout << "(call)";
+                        break;
+                    case cthu::resolved_insn::kind_t::fn_join:
+                        std::cout << "(join)";
+                        break;
+                    case cthu::resolved_insn::kind_t::fn_opt:
+                        std::cout << "(opt)";
+                        break;
+                    case cthu::resolved_insn::kind_t::fn_ref:
+                        std::cout << "(fn_ref)";
+                        break;
+                    default:
+                        std::cout << "(unknown)";
+                        break;
                 }
 
                 std::cout << " " << st.name_of( l.resolved.target ) << " in: [ ";

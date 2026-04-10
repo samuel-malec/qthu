@@ -81,9 +81,13 @@ int main( int argc, char* const* argv )
         throw_on_diag( parse_source( input, st ) );
 
         cthu::program prog{ st };
-        prog.lower();
+        prog.lower_to_ir();
+
         as::asmbuilder builder{};
-        lower_to_asm( builder, prog );
+        cthu::codegen cg{ prog, builder };
+        bc::program bc_prog = cg.lower_to_bc();
+        bc_prog.write_binary( out_name );
+        std::cout << "Written to: " << out_name << "\n";
     }
 
     catch( const std::exception& e )
