@@ -1,12 +1,4 @@
-; We first declare the builtin types. The ‹wₙ› types correspond to machine
-; words of fixed bit widths.
-
-type w₁₆
-type w₃₂
-type w₆₄
-
-; The (again builtin) type ‹bool› represents truth values. It is a separate
-; type from the word types above to improve type safety a bit.
+; Everything as a jsvalue ? 
 
 type bool
 
@@ -73,6 +65,8 @@ signature logical[ B ]
     assert ∷ B  → ∅
 )
 
+; signature f₀⁰ : simple []
+
 signature f₁¹[ F, S, B, I, O ] : simple[ F, S, B ]
 (
     call ∷ F × I → O
@@ -119,16 +113,3 @@ signature arithmetic[ T, S, B ] : simple[ T, S, B ]
     shr ∷ T × T → T
 )
 
-signature bitwise[ T ]
-(
-    and ∷ T × T → T
-    or  ∷ T × T → T
-    xor ∷ T × T → T
-    neg ∷ T → T
-)
-
-signature convert[ short, long ]
-(
-    cut ∷ long → short
-    ext ∷ short → long
-)
