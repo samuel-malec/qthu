@@ -5,14 +5,11 @@
 #include "ir.hpp"
 
 #include <cstdint>
-#include <format>
-#include <limits>
 #include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_map>
-#include <utility>
 #include <vector>
 
 namespace qthu::cthu
@@ -248,8 +245,7 @@ struct codegen
         return extra;
     }
 
-    void gen_fn( const fn_meta& fn, 
-                 std::vector< std::vector< detail::wrapper_spec > >& wrappers )
+    void gen_fn( const fn_meta& fn )
     {
         using namespace qthu::as;
 
@@ -285,13 +281,11 @@ struct codegen
         for ( uint16_t a = 0; a < arg_count; ++a )
         {
             builder.add_instr( get_arg_( a ) );
-            builder.add_instr( put_loc_( static_cast< int32_t >( fn.sig_in_slots.at( a ) ) ) );
+            builder.add_instr( put_loc_( static_cast< int32_t >( fn.in_param_slots.at( a ) ) ) );
         }
 
         // body
         uint32_t next_capture_local = fn.slot_size;
-        uint32_t wrapper_counter = 0;
-        uint16_t next_wrapper_cpool_idx = 0;
         uint32_t insn_uid = 0;
         for ( const auto& insn : fn.lowered )
         {
@@ -339,23 +333,23 @@ struct codegen
         }
 
         // epilogue
-        if ( fn.sig_out_slots.empty() )
+        if ( fn.out_param_slots.empty() )
         {
             builder.add_instr( undefined_() );
             builder.add_instr( return_() );
         }
         else
         {
-            builder.add_instr( get_loc_( static_cast< int32_t >( fn.sig_out_slots.at( 0 ) ) ) );
+            builder.add_instr( get_loc_( static_cast< int32_t >( fn.out_param_slots.at( 0 ) ) ) );
             builder.add_instr( return_() );
         }
     }
 
-    void gen_program( std::vector< std::vector< detail::wrapper_spec > >& wrappers )
+    void gen_program()
     {
         fn_capture_idx.resize( ir.fns.size() );
         for ( const auto& fn : ir.fns )
-            gen_fn( fn, wrappers );
+            gen_fn( fn );
     }
 
     bc::program lower_to_bc()
@@ -366,7 +360,7 @@ struct codegen
         gen_root();
 
         const uint32_t cthu_fn_count = static_cast< uint32_t >( ir.fns.size() );
-        gen_program( wrappers );
+        gen_program();
         // TODO
         return builder.build();
     }

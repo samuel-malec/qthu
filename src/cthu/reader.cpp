@@ -1,6 +1,3 @@
-#include <iostream>
-#include <stdexcept>
-
 #include "reader.hpp"
 
 namespace qthu::cthu

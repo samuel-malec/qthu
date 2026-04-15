@@ -4,7 +4,6 @@
 #include <iostream>
 #include <limits>
 #include <map>
-#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -65,8 +64,8 @@ struct fn_meta
     std::vector< resolved_insn > body;
     std::vector< lowered_insn > lowered;
     
-    std::vector< uint32_t > sig_in_slots;
-    std::vector< uint32_t > sig_out_slots;
+    std::vector< uint32_t > in_param_slots;
+    std::vector< uint32_t > out_param_slots;
     uint32_t slot_size = 0;
 };
 
@@ -95,7 +94,7 @@ struct program
             }
         }
     }
-
+    
     void collect_builtins()
     {
         for ( const auto& [ satom, structure ] : st.structures )
@@ -144,7 +143,7 @@ struct program
             {
                 const uint32_t s = alloc_slot();
                 push_version( p, s );
-                meta.sig_in_slots.push_back( s );
+                meta.in_param_slots.push_back( s );
             }
 
             for ( const auto& insn : meta.body )
@@ -186,14 +185,14 @@ struct program
                         std::string( st.name_of( meta.key.op ) ) + " -> " +
                         std::string( st.name_of( o ) ) );
                 }
-                meta.sig_out_slots.push_back( it->second.back() );
+                meta.out_param_slots.push_back( it->second.back() );
             }
 
             meta.slot_size = next_slot;
         }
     }
 
-    resolved_insn classify( const insn_t& insn ) const
+    resolved_insn classify( const insn_t& insn )
     {
         auto op_name = st.name_of( insn.operation );
         if ( op_name == "call" )
@@ -215,7 +214,8 @@ struct program
                 .in = insn.in,
                 .out = insn.out,
             };
-
+        
+        // TODO: handle functions that are not defined in prelude.ct
         if ( op_name == "join" && st.name_of( insn.structure ).starts_with( "f" ) )
             return resolved_insn{
                 .kind = resolved_insn::kind_t::fn_join,
@@ -225,11 +225,22 @@ struct program
                 .in = insn.in,
                 .out = insn.out,
             };
-
+        
         insn_key key{ insn.structure, insn.operation };
+        
+        // add cons_ on demand
+        if ( op_name.starts_with( "cons_" ) && st.name_of( insn.structure ) == "int" )
+        {
+            std::cout << "found you \n";
+            std::string builtin_name = "qjs_int_";
+            builtin_name += st.name_of( key.op );
+            auto atom = st.get( builtin_name );
+            builtins[ key ] = atom;
+        }
+
         if ( auto it = builtins.find( key ); it != builtins.end() )
         {
-            return resolved_insn{
+           return resolved_insn{
                 resolved_insn::kind_t::builtin,
                 insn.structure,
                 insn.operation,
@@ -238,8 +249,8 @@ struct program
                 insn.in,
                 insn.out,
             };
-        }
-
+        } 
+        
         if ( auto it = key_fn.find( key ); it != key_fn.end() )
         {
             return resolved_insn{

@@ -1,25 +1,52 @@
-; The ‹w₃₂› structure provides an implementation of ‹simple› for the built-in
-; 32-bit word type.
-
-structure w₃₂ : simple[ w₃₂, stck ]
+structure int : arithmetic[ int, stck, bool ]
 (
-    dup  = builtin_bv32dup
-    drop = builtin_bv32drop
-    move = builtin_bv32move
-    fork = builtin_bv32fork
+    dup  = qjs_int_dup
+    drop = qjs_int_drop
+    move = qjs_int_move
+    fork = qjs_int_fork
+    
+    push = qjs_int_push
+    pop  = qjs_int_pop
 
-    push = builtin_bv32push
-    pop  = builtin_bv32pop
+    dup  = qjs_int_dup
+    fork = qjs_int_fork
+    drop = qjs_int_drop 
+    move = qjs_int_move
+    join = qjs_int_join 
+
+    add = qjs_int_add 
+    sub = qjs_int_sub 
+    mul = qjs_int_sub 
+    div = qjs_int_div 
+    rem = qjs_int_rem 
+
+    eq? = qjs_int_eq 
+    ne? = qjs_int_ne 
+    lt? = qjs_int_lt 
+    le? = qjs_int_le 
+    ge? = qjs_int_ge 
+    gt? = qjs_int_gt 
+
+    shl = qjs_int_ashl 
+    shr = qjs_int_ashr 
+
+    cons_0 = qjs_int_cons_0
+
+    cons_1 = qjs_int_cons_1
+    cons_2 = qjs_int_cons_2
+    cons_3 = qjs_int_cons_3
+    cons_4 = qjs_int_cons_4
+    ; ...
 )
 
 structure bool : logical[ bool ]
 (
-    dup = builtin_bool_dup
-    not = builtin_bool_not
-    and = builtin_bool_and
-    or  = builtin_bool_or
-    xor = builtin_bool_xor
-    assert = builtin_bool_assert
+    dup    = qjs_bool_dup
+    not    = qjs_bool_not
+    and    = qjs_bool_and
+    or     = qjs_bool_or
+    xor    = qjs_bool_xor
+    assert = qjs_bool_assert
 )
 
 structure fᵢⁱ : f₁¹[ func, i₃₂, bool, i₃₂, i₃₂ ]
@@ -36,70 +63,3 @@ structure fᵢᵢᵢⁱ : f₃¹[ func, i₃₂, i₃₂, i₃₂, i₃₂ ]
     opt  = builtin_func_opt
 )
 
-structure i₃₂ : arithmetic[ w₃₂, stck, bool ]
-(
-    dup  = builtin_bv32dup
-    fork = builtin_bv32dup
-    drop = builtin_bv32drop
-    move = builtin_bv32move
-    join = builtin_bv32join
-
-    add = builtin_bv32add
-    sub = builtin_bv32sub
-    mul = builtin_bv32mul
-    div = builtin_bv32sdiv
-    rem = builtin_bv32srem
-
-    eq? = builtin_bv32eq
-    ne? = builtin_bv32ne
-    lt? = builtin_bv32slt
-    le? = builtin_bv32sle
-    ge? = builtin_bv32sge
-    gt? = builtin_bv32sgt
-
-    shl = builtin_bv32shl
-    shr = builtin_bv32ashr
-
-    cons_0   = builtin_bv32cons_0
-    cons_1   = builtin_bv32cons_1
-    cons_2   = builtin_bv32cons_2
-    cons_16  = builtin_bv32cons_16
-    cons_987 = builtin_bv32cons_987
-)
-
-structure u₃₂ : arithmetic[ w₃₂, stck, bool ]
-(
-    dup  = builtin_bv32dup
-    fork = builtin_bv32dup
-    drop = builtin_bv32drop
-    move = builtin_bv32move
-    join = builtin_bv32join
-
-    add = builtin_bv32add
-    sub = builtin_bv32sub
-    mul = builtin_bv32mul
-    div = builtin_bv32udiv
-    rem = builtin_bv32urem
-
-    eq? = builtin_bv32eq
-    ne? = builtin_bv32ne
-    lt? = builtin_bv32ult
-    le? = builtin_bv32ule
-    ge? = builtin_bv32uge
-    gt? = builtin_bv32ugt
-
-    shl = builtin_bv32shl
-    shr = builtin_bv32lshr
-)
-
-structure u₁₆³² : convert[ w₁₆, w₃₂ ]
-(
-    cut = builtin_bv32trunc16
-    ext = builtin_bv16zext32
-)
-
-structure i₁₆³² : convert[ w₁₆, w₃₂ ]
-(
-    cut = builtin_bv32trunc16
-    ext = builtin_bv16sext32
-)
