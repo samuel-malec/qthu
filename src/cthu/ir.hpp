@@ -231,7 +231,6 @@ struct program
         // add cons_ on demand
         if ( op_name.starts_with( "cons_" ) && st.name_of( insn.structure ) == "int" )
         {
-            std::cout << "found you \n";
             std::string builtin_name = "qjs_int_";
             builtin_name += st.name_of( key.op );
             auto atom = st.get( builtin_name );
@@ -289,7 +288,6 @@ struct program
         collect_builtins();
         resolve_instructions();
         aloc_slots();
-        print();
     }
 
     void print() const

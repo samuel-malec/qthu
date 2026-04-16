@@ -84,7 +84,7 @@ int main( int argc, char* const* argv )
         as::asmbuilder builder{};
         cthu::codegen cg{ prog, builder };
         bc::program bc_prog = cg.lower_to_bc();
-        // bc_prog.write_binary( out_name );
+        bc_prog.write_binary( out_name );
         std::cout << "Written to: " << out_name << "\n";
     }
 

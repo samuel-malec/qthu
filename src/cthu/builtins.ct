@@ -1,22 +1,18 @@
+; everything as a jsvalue ? 
+
 structure int : arithmetic[ int, stck, bool ]
 (
     dup  = qjs_int_dup
     drop = qjs_int_drop
     move = qjs_int_move
-    fork = qjs_int_fork
+    join = qjs_int_join
     
     push = qjs_int_push
     pop  = qjs_int_pop
 
-    dup  = qjs_int_dup
-    fork = qjs_int_fork
-    drop = qjs_int_drop 
-    move = qjs_int_move
-    join = qjs_int_join 
-
     add = qjs_int_add 
     sub = qjs_int_sub 
-    mul = qjs_int_sub 
+    mul = qjs_int_mul 
     div = qjs_int_div 
     rem = qjs_int_rem 
 
@@ -36,7 +32,6 @@ structure int : arithmetic[ int, stck, bool ]
     cons_2 = qjs_int_cons_2
     cons_3 = qjs_int_cons_3
     cons_4 = qjs_int_cons_4
-    ; ...
 )
 
 structure bool : logical[ bool ]
@@ -51,15 +46,14 @@ structure bool : logical[ bool ]
 
 structure fᵢⁱ : f₁¹[ func, i₃₂, bool, i₃₂, i₃₂ ]
 (
-    call = builtin_func_call
-    join = builtin_func_join
-    opt  = builtin_func_opt
+    call = qjs_func_call
+    join = qjs_func_join
+    opt  = qjs_func_opt
 )
 
 structure fᵢᵢᵢⁱ : f₃¹[ func, i₃₂, i₃₂, i₃₂, i₃₂ ]
 (
-    call = builtin_func_call
-    join = builtin_func_join
-    opt  = builtin_func_opt
+    call = qjs_func_call
+    join = qjs_func_join
+    opt  = qjs_func_opt
 )
-

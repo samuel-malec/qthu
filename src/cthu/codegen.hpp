@@ -5,6 +5,7 @@
 #include "ir.hpp"
 
 #include <cstdint>
+#include <format>
 #include <set>
 #include <stdexcept>
 #include <string>
@@ -28,7 +29,10 @@ struct codegen
     as::asmbuilder& builder;
     std::vector< fn_patch > patches;
     std::vector< std::unordered_map< uint32_t, uint16_t > > fn_capture_idx;
+    std::size_t label_counter = 0;
 
+    std::string make_label() { return std::format("lab{}", label_counter++ ); }
+    
     uint32_t find_main_id() const
     {
         for ( const auto& fn : ir.fns )
@@ -43,162 +47,10 @@ struct codegen
             patches.resize( idx + 1 );
     }
 
-    void emit_builtin( const lowered_insn& insn, uint32_t uid )
-    {
-        using namespace qthu::as;
-        const std::string_view name = ir.st.name_of( insn.resolved.target );
-
-        auto get1 = [&]() {
-            builder.add_instr( get_loc_( static_cast< int32_t >( insn.slots_in.at( 0 ) ) ) );
-        };
-        auto get2 = [&]() {
-            builder.add_instr( get_loc_( static_cast< int32_t >( insn.slots_in.at( 0 ) ) ) );
-            builder.add_instr( get_loc_( static_cast< int32_t >( insn.slots_in.at( 1 ) ) ) );
-        };
-        auto put = [&]( uint32_t slot ) {
-            builder.add_instr( put_loc_( static_cast< int32_t >( slot ) ) );
-        };
-
-        if ( name == "builtin_bv32dup" || name == "builtin_bv32fork" || name == "builtin_bool_dup" )
-        {
-            get1();
-            builder.add_instr( dup_() );
-            put( insn.slots_out.at( 0 ) );
-            put( insn.slots_out.at( 1 ) );
-            return;
-        }
-
-        if ( name == "builtin_bv32drop" )
-            return;
-
-        if ( name == "builtin_bv32move" )
-        {
-            get1();
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-
-        if ( name.starts_with( "builtin_bv32cons_" ) )
-        {
-            const auto suffix = name.substr( std::string_view( "builtin_bv32cons_" ).size() );
-            int32_t v = 0;
-            try
-            {
-                v = std::stoi( std::string( suffix ) );
-            }
-            catch ( const std::exception& )
-            {
-                throw std::runtime_error( std::string( "invalid constant builtin: " ) +
-                                          std::string( name ) );
-            }
-            builder.add_instr( push_i32_( v ) );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-
-        if ( name == "builtin_bv32add" )
-        {
-            get2();
-            builder.add_instr( add_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bv32sub" )
-        {
-            get2();
-            builder.add_instr( sub_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bv32mul" )
-        {
-            get2();
-            builder.add_instr( mul_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bv32sdiv" || name == "builtin_bv32udiv" )
-        {
-            get2();
-            builder.add_instr( div_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bv32srem" || name == "builtin_bv32urem" )
-        {
-            get2();
-            builder.add_instr( mod_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bv32eq" )
-        {
-            get2();
-            builder.add_instr( strict_eq_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bv32ne" )
-        {
-            get2();
-            builder.add_instr( strict_eq_() );
-            builder.add_instr( lnot_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bv32slt" || name == "builtin_bv32ult" )
-        {
-            get2();
-            builder.add_instr( lt_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bv32sgt" || name == "builtin_bv32ugt" )
-        {
-            get2();
-            builder.add_instr( gt_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bool_not" )
-        {
-            get1();
-            builder.add_instr( lnot_() );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-        if ( name == "builtin_bool_assert" )
-        {
-            const std::string ok = "assert_ok_" + std::to_string( uid );
-            get1();
-            builder.add_instr( if_true_( ok ) );
-            builder.add_instr( push_i32_( 1 ) );
-            builder.add_instr( throw_() );
-            builder.add_label( ok );
-            return;
-        }
-
-        if ( name == "builtin_bv32join" )
-        {
-            const std::string L_defined = "join_x_defined_" + std::to_string( uid );
-            const std::string L_end = "join_end_" + std::to_string( uid );
-
-            builder.add_instr( get_loc_( static_cast< int32_t >( insn.slots_in.at( 0 ) ) ) );
-            builder.add_instr( dup_() );
-            builder.add_instr( is_undefined_() );
-            builder.add_instr( if_false_( L_defined ) );
-            builder.add_instr( drop_() );
-            builder.add_instr( get_loc_( static_cast< int32_t >( insn.slots_in.at( 1 ) ) ) );
-            builder.add_instr( goto_( L_end ) );
-            builder.add_label( L_defined );
-            builder.add_label( L_end );
-            put( insn.slots_out.at( 0 ) );
-            return;
-        }
-
-        throw std::runtime_error( std::string( "unimplemented builtin: " ) + std::string( name ) );
-    }
-
+    void emit_builtin( const lowered_insn& insn, uint32_t uid );
+    void emit_fn_opt( const lowered_insn& insn );
+    void emit_fn_join( const lowered_insn& insn );
+    
     void gen_root()
     {
         using namespace qthu::as;
@@ -248,7 +100,6 @@ struct codegen
     void gen_fn( const fn_meta& fn )
     {
         using namespace qthu::as;
-
         const uint32_t fn_bc_idx = 1 + fn.id;
         ensure_patch( fn_bc_idx );
 
@@ -287,7 +138,7 @@ struct codegen
         // body
         uint32_t next_capture_local = fn.slot_size;
         uint32_t insn_uid = 0;
-        for ( const auto& insn : fn.lowered )
+        for ( const lowered_insn& insn : fn.lowered )
         {
             ++insn_uid;
             switch ( insn.resolved.kind )
@@ -303,32 +154,34 @@ struct codegen
                     if ( it == fn_capture_idx[ fn.id ].end() )
                         throw std::runtime_error( "missing capture" );
                     
-                    builder.add_instr( get_var_ref_( static_cast< int32_t >( it->second ) ) );
-                    builder.add_instr( put_loc_( static_cast< int32_t >( insn.slots_out.at( 0 ) ) ) );
+                    builder.add_instr( get_var_ref_( it->second ) );
+                    builder.add_instr( put_loc_( insn.slots_out.at( 0 ) ) );
                     break;
                 }
 
                 case resolved_insn::kind_t::fn_call:
                 {
                     const uint16_t argc = static_cast< uint16_t >( insn.slots_in.size() - 1 );
-                    builder.add_instr( get_loc_( static_cast< int32_t >( insn.slots_in.at( 0 ) ) ) );
+                    builder.add_instr( get_loc_( insn.slots_in[ 0 ] ) );
                     for ( size_t i = 1; i < insn.slots_in.size(); ++ i )
-                        builder.add_instr( get_loc_( static_cast< int32_t >( insn.slots_in[ i ] ) ) );
+                        builder.add_instr( get_loc_( insn.slots_in[ i ] ) );
                     
                     builder.add_instr( call_( argc ) );
-                    builder.add_instr( put_loc_( static_cast< int32_t >( insn.slots_out.at( 0 ) ) ) );
+                    builder.add_instr( put_loc_( insn.slots_out[ 0 ] ) );
                     break;
                 }
 
                 case resolved_insn::kind_t::fn_opt:
                 {
-                    // TODO
+                    emit_fn_opt( insn );
+                    break;
                 }
 
                 case resolved_insn::kind_t::fn_join:
                 {
-                    // TODO:
-                }
+                    emit_fn_join( insn );
+                    break;
+               }
             }
         }
 
@@ -352,17 +205,46 @@ struct codegen
             gen_fn( fn );
     }
 
+    static void fill_captured_locals( bc::function_bytecode& f )
+    {
+        f.vardefs.resize( static_cast< size_t >( f.arg_count ) + static_cast< size_t >( f.local_count ) );
+        f.var_ref_count = f.local_count;
+
+        for ( uint16_t i = 0; i < f.local_count; ++i )
+        {
+            auto& vd = f.vardefs[ static_cast< size_t >( f.arg_count ) + i ];
+            vd.var_name_atom = 0;
+            vd.scope_next = -1;
+            vd.var_ref_idx = i;
+            vd.var_kind = 0;
+            vd.is_const = false;
+            vd.is_lexical = false;
+            vd.is_captured = true;
+            vd.has_scope = false;
+        }
+    }
+
     bc::program lower_to_bc()
     {
         if ( ir.fns.empty() )
             throw std::runtime_error( "no functions to compile" );
 
         gen_root();
-
-        const uint32_t cthu_fn_count = static_cast< uint32_t >( ir.fns.size() );
         gen_program();
-        // TODO
-        return builder.build();
+        std::cout << builder.print_asm();
+        bc::program bc_prog = builder.build();
+
+        for ( uint32_t i = 0; i < bc_prog.functions.size(); ++i )
+        {
+            ensure_patch( i );
+            bc_prog.functions[ i ].cpool_funcs = patches[ i ].cpool_funcs;
+            bc_prog.functions[ i ].closure_vars = patches[ i ].closure_vars;
+
+            if ( patches[ i ].capture_all )
+                fill_captured_locals( bc_prog.functions[ i ] );
+        }
+
+        return bc_prog;
     }
 };
 
