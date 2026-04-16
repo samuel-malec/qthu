@@ -54,18 +54,12 @@ struct function_bytecode
     std::vector< uint32_t > cpool_funcs; // indices into program.functions
     std::vector< uint8_t > bytecode;
     std::map< std::string, uint32_t > local_labels;
-
-    uint64_t size() const
-    {
-        return bytecode.size();
-    }
 };
 
 struct program
 {
     std::vector< function_bytecode > functions;
 
-   
     static uint8_t pack_vardef_flags( const vardef& vd )
     {
         uint8_t f = 0;
@@ -239,7 +233,7 @@ struct program
         {
             result += std::format( "Function: {} (args: {}, locals: {}, stack: {})\n", func.name,
                                    func.arg_count, func.local_count, func.stack_size );
-            result += std::format( "  Bytecode size: {} bytes\n", func.size() );
+            result += std::format( "  Bytecode size: {} bytes\n", func.bytecode.size() );
 
             if ( !func.local_labels.empty() )
             {

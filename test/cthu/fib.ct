@@ -21,13 +21,12 @@ structure fib
 
     frame = λ A B a b i → out
     (
-        int fork a → a₁ a₂
-        int fork b → b₁ b₂
-        int fork i → i₁ i₂
+        int dup a → a₁ a₂
+        int dup b → b₁ b₂
+        int dup i → i₁ i₂
 
         fᵢᵢᵢⁱ call A a₁ b₁ i₁ → out₁
         fᵢᵢᵢⁱ call B a₂ b₂ i₂ → out₂
-
         int join out₁ out₂ → out
     )
 
@@ -35,7 +34,7 @@ structure fib
     (
         int cons_0      → zero
         int dup i       → i₁ i₂
-        int eq? i₁ zero → cmp
+        int le? i₁ zero → cmp
 
         bool dup cmp   → cmp₁ cmp₂
         bool not cmp₂  → cmp₃
@@ -68,12 +67,12 @@ structure main
 (
     run = λ
     (
-        int cons_16 → a
+        int cons_1 → a
 
         fib compute        → program
         fᵢⁱ call program a → out
 
-        int cons_987   → b
+        int cons_1  → b
         int eq?  out b → c
 
         bool assert c

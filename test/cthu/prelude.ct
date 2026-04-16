@@ -65,6 +65,7 @@ signature logical[ B ]
     assert ∷ B  → ∅
 )
 
+; todo
 ; signature f₀⁰ : simple []
 
 signature f₁¹[ F, S, B, I, O ] : simple[ F, S, B ]
@@ -112,4 +113,3 @@ signature arithmetic[ T, S, B ] : simple[ T, S, B ]
     shl ∷ T × T → T
     shr ∷ T × T → T
 )
-

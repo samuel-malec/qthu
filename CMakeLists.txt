@@ -53,6 +53,7 @@ target_sources(cthucc
     src/cthu/main.cpp
     src/cthu/lexer.cpp
     src/cthu/reader.cpp
+    src/cthu/codegen.cpp
     src/asm/qassembly.cpp
     src/asm/instruction.cpp
     src/asm/directive.cpp
