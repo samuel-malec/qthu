@@ -223,7 +223,6 @@ namespace qthu::cthu
                 builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );   
             }
 
-            // FIXME: we'll have to deal with numbers larger than the maximum bounded size we can represent in c++ types
             return;
         }
 
@@ -261,7 +260,6 @@ namespace qthu::cthu
             return;
         }
 
-        std::cout << builder.print_asm();
         throw std::runtime_error( std::string( "unimplemented builtin: " ) + std::string( name ) );
     }
 }

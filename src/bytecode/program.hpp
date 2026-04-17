@@ -161,7 +161,7 @@ struct program
         active_stack.pop_back();
     }
 
-    std::vector< uint8_t > wrap_with_metadata() const
+    std::vector< uint8_t > to_bytes() const
     {
         if ( functions.empty() )
             throw std::runtime_error( "Cannot wrap empty program" );
@@ -184,11 +184,6 @@ struct program
         std::vector< uint32_t > active;
         encode_function_object( result, 0, active );
         return result;
-    }
-
-    std::vector< uint8_t > to_bytes() const
-    {
-        return wrap_with_metadata();
     }
 
     void write_binary( const std::string& filename ) const

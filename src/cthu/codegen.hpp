@@ -63,12 +63,12 @@ struct codegen
         for ( uint32_t id = 0; id < ir.fns.size(); ++id )
         {
             patches[ 0 ].cpool_funcs.push_back( 1 + id );
-            builder.add_instr( fclosure_( static_cast< int32_t >( id ) ) );
-            builder.add_instr( put_loc_( static_cast< int32_t >( id ) ) );
+            builder.add_instr( fclosure_( id ) );
+            builder.add_instr( put_loc_( id ) );
         }
 
         const uint32_t main_run_id = find_main_id();
-        builder.add_instr( get_loc_( static_cast< int32_t >( main_run_id ) ) );
+        builder.add_instr( get_loc_( main_run_id ) );
         builder.add_instr( call0_() );
         builder.add_instr( return_() );
     }
@@ -81,20 +81,6 @@ struct codegen
                 captures.insert( insn.target_fn_id );
         
         return captures;
-    }
-
-    uint32_t count_extra_locals( const fn_meta& fn )
-    {
-        uint32_t extra = 0;
-        for ( const auto& insn : fn.lowered )
-        {
-            if ( insn.resolved.kind == resolved_insn::kind_t::fn_opt )
-                extra += 2;
-            else if ( insn.resolved.kind == resolved_insn::kind_t::fn_join )
-                extra += 3;
-        }
-        
-        return extra;
     }
 
     void gen_fn( const fn_meta& fn )
@@ -119,9 +105,8 @@ struct codegen
             fn_capture_idx[ fn.id ][ target_id ] = closure_var_idx++;
         }
 
-        uint32_t extra_local_count = count_extra_locals( fn );
         const uint16_t arg_count = static_cast< uint16_t >( fn.in.size() );
-        const uint16_t local_count = static_cast< uint16_t >( fn.slot_size + extra_local_count );
+        const uint16_t local_count = static_cast< uint16_t >( fn.slot_size ); 
         const std::string fn_name = std::string( ir.st.name_of( fn.key.stru ) ) + "::" +
                                     std::string( ir.st.name_of( fn.key.op ) );
 
@@ -132,7 +117,7 @@ struct codegen
         for ( uint16_t a = 0; a < arg_count; ++a )
         {
             builder.add_instr( get_arg_( a ) );
-            builder.add_instr( put_loc_( static_cast< int32_t >( fn.in_param_slots.at( a ) ) ) );
+            builder.add_instr( put_loc_( static_cast< int32_t >( fn.in_param_slots[ a ] ) ) );
         }
 
         // body
@@ -155,7 +140,7 @@ struct codegen
                         throw std::runtime_error( "missing capture" );
                     
                     builder.add_instr( get_var_ref_( it->second ) );
-                    builder.add_instr( put_loc_( insn.slots_out.at( 0 ) ) );
+                    builder.add_instr( put_loc_( insn.slots_out[ 0 ] ) );
                     break;
                 }
 
@@ -193,7 +178,7 @@ struct codegen
         }
         else
         {
-            builder.add_instr( get_loc_( static_cast< int32_t >( fn.out_param_slots.at( 0 ) ) ) );
+            builder.add_instr( get_loc_( fn.out_param_slots.at( 0 ) ) );
             builder.add_instr( return_() );
         }
     }
@@ -207,12 +192,12 @@ struct codegen
 
     static void fill_captured_locals( bc::function_bytecode& f )
     {
-        f.vardefs.resize( static_cast< size_t >( f.arg_count ) + static_cast< size_t >( f.local_count ) );
+        f.vardefs.resize( f.arg_count + f.local_count );
         f.var_ref_count = f.local_count;
 
         for ( uint16_t i = 0; i < f.local_count; ++i )
         {
-            auto& vd = f.vardefs[ static_cast< size_t >( f.arg_count ) + i ];
+            auto& vd = f.vardefs[ f.arg_count + i ];
             vd.var_name_atom = 0;
             vd.scope_next = -1;
             vd.var_ref_idx = i;
