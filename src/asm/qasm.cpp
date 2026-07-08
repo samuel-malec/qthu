@@ -3,10 +3,10 @@
 #include <string>
 #include <cstring>
 
-#include "common/file.hpp"
-#include "common/document_store.hpp"
-#include "asm/qassembly.hpp"
-#include "bytecode/program.hpp"
+#include "../common/file.hpp"
+#include "../common/document_store.hpp"
+#include "asm.hpp"
+#include "../bytecode/program.hpp"
 
 int main( int argc, const char** argv )
 {
@@ -41,15 +41,13 @@ int main( int argc, const char** argv )
             current_doc = nullptr;
         }
 
-        std::cout << "=== Assembly Items ===\n";
         std::cout << assm.print() << "\n";
-
         auto prog = assm.assemble();
 
-        std::cout << "\n=== Generated Program ===\n";
+        std::cout << "\nGenerated Program:\n";
         std::cout << prog.print() << "\n";
 
-        std::cout << "\n=== Bytecode Hex Dump ===\n";
+        std::cout << "Bytecode:\n";
         std::cout << prog.hex_dump() << "\n";
 
         prog.write_binary( out_name );

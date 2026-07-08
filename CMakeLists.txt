@@ -4,13 +4,13 @@ project(qthu)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# toy assembler
+# emulator of an assembler with qjs-like opcodes
 add_executable(qasm)
 include(cmake/quickjs.cmake)
 target_sources(qasm
     PRIVATE
-    src/qasm.cpp
-    src/asm/qassembly.cpp
+    src/asm/qasm.cpp
+    src/asm/asm.cpp
     src/asm/instruction.cpp
     src/asm/directive.cpp
 )
@@ -20,7 +20,7 @@ target_link_libraries(qasm
     quickjs
 )
 
-# wrap the bytecode and run it
+# qjs bytecode runner
 add_executable(bcrun)
 target_sources(bcrun
     PRIVATE
@@ -32,29 +32,30 @@ target_link_libraries(bcrun
     quickjs-libc
 )
 
-# compiler for a toy language
-add_executable(toy)
-target_sources(toy
-    PRIVATE
-    src/toy/toy.cpp
-    src/asm/qassembly.cpp
-    src/asm/instruction.cpp
-    src/asm/directive.cpp
-)
+# compiler from a toy language to qjs bytecode
+# add_executable(toy)
+# target_sources(toy
+#     PRIVATE
+#     src/toy/toy.cpp
+#     src/asm/asm.cpp
+#     src/asm/instruction.cpp
+#     src/asm/directive.cpp
+# )
 
-target_link_libraries(toy
-    PRIVATE
-    quickjs-libc
-)
+# target_link_libraries(toy
+#     PRIVATE
+#     quickjs-libc
+# )
 
+# compiler from cthu to qjs bytecode
 add_executable(cthucc)
 target_sources(cthucc
     PRIVATE
-    src/cthu/main.cpp
-    src/cthu/lexer.cpp
-    src/cthu/reader.cpp
-    src/cthu/codegen.cpp
-    src/asm/qassembly.cpp
+    src/cthucc/main.cpp
+    src/cthucc/lexer.cpp
+    src/cthucc/reader.cpp
+    src/cthucc/codegen.cpp
+    src/asm/asm.cpp
     src/asm/instruction.cpp
     src/asm/directive.cpp
 )
@@ -67,4 +68,12 @@ target_include_directories(cthucc
 target_link_libraries(cthucc
     PRIVATE
     quickjs-libc
+)
+
+# compiler from javascript to cthu
+add_executable(jscc)
+
+target_sources(jscc
+    PRIVATE
+    src/jscc/main.cpp
 )

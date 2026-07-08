@@ -10,7 +10,7 @@
 #include "symtab.hpp"
 #include "types.hpp"
 
-namespace qthu::cthu
+namespace qthu::cthucc
 {
 
 struct insn_key
@@ -300,19 +300,19 @@ struct program
                 std::cout << "      ";
                 switch (l.resolved.kind)
                 {
-                    case cthu::resolved_insn::kind_t::builtin:
+                    case cthucc::resolved_insn::kind_t::builtin:
                         std::cout << "(builtin)";
                         break;
-                    case cthu::resolved_insn::kind_t::fn_call:
+                    case cthucc::resolved_insn::kind_t::fn_call:
                         std::cout << "(call)";
                         break;
-                    case cthu::resolved_insn::kind_t::fn_join:
+                    case cthucc::resolved_insn::kind_t::fn_join:
                         std::cout << "(join)";
                         break;
-                    case cthu::resolved_insn::kind_t::fn_opt:
+                    case cthucc::resolved_insn::kind_t::fn_opt:
                         std::cout << "(opt)";
                         break;
-                    case cthu::resolved_insn::kind_t::fn_ref:
+                    case cthucc::resolved_insn::kind_t::fn_ref:
                         std::cout << "(fn_ref)";
                         break;
                     default:

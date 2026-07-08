@@ -125,4 +125,4 @@ struct instruction
     }
 };
 
-} // namespace qthu
+}

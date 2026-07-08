@@ -1,5 +1,3 @@
-; Everything as a jsvalue ? 
-
 type bool
 
 ; The ‹stck› type represents an explicit stack, and is somewhat special because

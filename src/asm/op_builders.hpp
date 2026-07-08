@@ -99,4 +99,4 @@ inline emitted_instruction jnz( std::string_view label )
     return if_true_( label );
 }
 
-} // namespace qthu::as
+}

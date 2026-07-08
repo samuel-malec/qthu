@@ -5,7 +5,7 @@
 #include <format>
 
 #include "opcodes.hpp"
-#include "qassembly.hpp"
+#include "asm.hpp"
 #include "../bytecode/program.hpp"
 #include "../common/parser_base.hpp"
 
@@ -173,5 +173,4 @@ std::string function_assembly::print() const
     return result;
 }
 
-
-} // namespace qthu
+}

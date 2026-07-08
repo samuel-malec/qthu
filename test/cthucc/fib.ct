@@ -67,7 +67,7 @@ structure main
 (
     run = λ
     (
-        int cons_1 → a
+        int cons_10 → a
 
         fib compute        → program
         fᵢⁱ call program a → out

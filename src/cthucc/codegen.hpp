@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace qthu::cthu
+namespace qthu::cthucc
 {
 
 struct fn_patch
@@ -25,7 +25,7 @@ struct fn_patch
 
 struct codegen
 {
-    cthu::program& ir;
+    cthucc::program& ir;
     as::asmbuilder& builder;
     std::vector< fn_patch > patches;
     std::vector< std::unordered_map< uint32_t, uint16_t > > fn_capture_idx;
@@ -240,4 +240,4 @@ inline bc::program lower_to_bc( program& ir_prog )
     return gen.lower_to_bc();
 }
 
-} // namespace qthu::cthu
+}

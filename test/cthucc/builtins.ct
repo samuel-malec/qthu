@@ -1,4 +1,11 @@
-; everything as a jsvalue ? 
+; todo: have structure jsvalue that contains all possible operations ₆₇
+; todo: have some smaller structures whose operations are subset of jsvalue operations
+; todo: then perform static analysis to decide, what values could be demoted to more concrete types ( e.g from jsvalue -> number, ) 
+; todo: we need to have memory structure, and track reference x heap pairs
+; todo: what next ? 
+
+; structure jsvalue : __everything__
+
 
 structure int : arithmetic[ int, stck, bool ]
 (

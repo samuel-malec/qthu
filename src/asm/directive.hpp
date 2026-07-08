@@ -20,4 +20,5 @@ struct directive
 
     bool str_arg() const { return mnemonic == "function"; }
 };
-} // namespace qthu
+
+}

@@ -1,5 +1,3 @@
-; everything as a jsvalue ? 
-
 structure int : arithmetic[ int, stck, bool ]
 (
     dup  = qjs_int_dup

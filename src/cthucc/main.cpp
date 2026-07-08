@@ -34,11 +34,11 @@ config parse_args( int argc, char* const* argv )
     return { in_name, out_name };
 }
 
-cthu::diag parse_source( const fs::path &path, cthu::symtab &st )
+cthucc::diag parse_source( const fs::path &path, cthucc::symtab &st )
 {
     std::string content = read_file( path.string() );
-    auto ptr = std::make_shared< cthu::source_file >( path.string(), std::move( content ) );
-    cthu::reader r{ ptr, st };
+    auto ptr = std::make_shared< cthucc::source_file >( path.string(), std::move( content ) );
+    cthucc::reader r{ ptr, st };
     return r.parse();
 }
 
@@ -52,7 +52,7 @@ std::pair< fs::path, fs::path > support_files_for( const fs::path &input )
     return { "src/cthu/prelude.ct", "src/cthu/builtins.ct" };
 }
 
-void throw_on_diag( cthu::diag err )
+void throw_on_diag( cthucc::diag err )
 {
     if ( !err )
         return;
@@ -71,7 +71,7 @@ int main( int argc, char* const* argv )
     {
         const auto& [ in_name, out_name ] = parse_args( argc, argv );
 
-        cthu::symtab st;
+        cthucc::symtab st;
         auto input = fs::path( in_name );
         auto [ prelude, builtins ] = support_files_for( input );
 
@@ -79,13 +79,13 @@ int main( int argc, char* const* argv )
         throw_on_diag( parse_source( builtins, st ) );
         throw_on_diag( parse_source( input, st ) );
 
-        cthu::program prog{ st };
+        cthucc::program prog{ st };
         prog.lower_to_ir();
         as::asmbuilder builder{};
-        cthu::codegen cg{ prog, builder };
+        cthucc::codegen cg{ prog, builder };
         bc::program bc_prog = cg.lower_to_bc();
         bc_prog.write_binary( out_name );
-        std::cout << "Written to: " << out_name << "\n";
+        std::cout << "qjs bytecode written to: " << out_name << "\n";
     }
 
     catch( const std::exception& e )

@@ -8,7 +8,7 @@
 
 #include "types.hpp"
 
-namespace qthu::cthu
+namespace qthu::cthucc
 {
 
 struct symtab

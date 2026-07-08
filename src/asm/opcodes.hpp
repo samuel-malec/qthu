@@ -71,4 +71,4 @@ inline bool is_valid_instruction( const std::string& mnemonic )
     return get_opcode_set().count( mnemonic ) > 0;
 }
 
-} // namespace qthu
+}

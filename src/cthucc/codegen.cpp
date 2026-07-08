@@ -1,7 +1,7 @@
 #include "codegen.hpp"
 #include <iostream>
 
-namespace qthu::cthu
+namespace qthu::cthucc
 {
     void codegen::emit_fn_join( const lowered_insn& insn )
     {

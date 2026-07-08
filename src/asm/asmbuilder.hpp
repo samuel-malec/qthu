@@ -1,6 +1,6 @@
 #pragma once
 
-#include "qassembly.hpp"
+#include "asm.hpp"
 #include "op_builders.hpp"
 
 namespace qthu::as
@@ -65,4 +65,4 @@ struct asmbuilder
     }
 };
 
-} // namespace qthu
+}

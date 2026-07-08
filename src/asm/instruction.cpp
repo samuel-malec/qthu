@@ -49,4 +49,5 @@ instruction instruction::from_string( const std::string_view sv )
     return instr;
 }
 
-} // namespace qthu
+}
+

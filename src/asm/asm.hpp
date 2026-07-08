@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <sstream>
 #include <vector>
 #include <map>
 
@@ -96,11 +97,11 @@ struct assembly
 
     std::string print() const
     {
-        std::string result;
+        std::ostringstream out;
         for ( const auto& func : functions )
-            result += func.print() + "\n";
-        return result;
+            out << func.print() + "\n";
+        return out.str();
     }
 };
 
-} // namespace qthu
+}

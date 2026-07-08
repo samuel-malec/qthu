@@ -8,7 +8,7 @@
 #include "symtab.hpp"
 #include "types.hpp"
 
-namespace qthu::cthu
+namespace qthu::cthucc
 {
 
 struct diag_base : brq::refcount_base<>
