@@ -54,8 +54,7 @@ struct codegen
     void gen_root()
     {
         using namespace qthu::as;
-
-        builder.add_function( "main", 0, static_cast< uint16_t >( ir.fns.size() ), 256 );
+        builder.add_function( "__toplevel__", 0, static_cast< uint16_t >( ir.fns.size() ), 256 );
         ensure_patch( 0 );
         patches[ 0 ].capture_all = true;
         patches[ 0 ].cpool_funcs.reserve( ir.fns.size() );

@@ -7,8 +7,23 @@
 namespace qthu::as
 {
 
-const std::set< std::string_view > directive::valid_directives = { "function", "args", "locals",
-                                                                   "stack_size" };
+const std::set< std::string_view > directive::valid_directives = 
+{ 
+    "function",
+    "args",
+    "locals",
+    "stack_size",
+};
+
+bool valid_name( std::string_view sv ) 
+{
+    for ( auto a : sv )
+    {
+        if ( a != '_' && !isalnum( a ) )
+            return false;
+    }
+    return true;
+}
 
 directive directive::from_string( const std::string_view sv )
 {
@@ -32,23 +47,22 @@ directive directive::from_string( const std::string_view sv )
     directive dir;
     dir.mnemonic = std::string( mnemonic_sv );
     bool is_function = mnemonic_sv == "function";
-
-    if ( is_function && !isalpha( lex.sv[ 0 ] ) )
-        throw std::runtime_error(
-            std::format( "invalid function name: '{}'", std::string( lex.sv ) ) );
-
-    if ( !is_function && !isdigit( lex.sv[ 0 ] ) )
-        throw std::runtime_error(
-            std::format( "invalid operand for directive: '{}', got: '{}', but expected a number",
-                         mnemonic, std::string( lex.sv ) ) );
-
-    if ( isalpha( lex.sv[ 0 ] ) )
+    
+    // FIXME: this seems rather odd restriction to function names
+    if ( is_function )
     {
+        if ( !valid_name( lex.sv ) )
+            throw std::runtime_error( std::format( "invalid function name: '{}'", std::string( lex.sv ) ) );
+
         auto name = lex.shift_word();
-        dir.name = name;
+        dir.fn_name = name;
     }
+
     else
     {
+        if ( !isdigit( lex.sv[ 0 ] ) )
+           throw std::runtime_error( std::format( "invalid operand for directive: '{}', got: '{}', but expected a number", mnemonic, std::string( lex.sv ) ) );
+
         long value = lex.shift_signed();
         dir.value = static_cast< uint32_t >( value );
     }

@@ -203,7 +203,7 @@ namespace qthu::cthucc
         if ( name == "qjs_int_ashr" )
         {
             get1( insn );
-            builder.add_instr( qthu::as::shl_() );
+            builder.add_instr( qthu::as::shr_() );
             builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
             return;
         }
@@ -228,7 +228,8 @@ namespace qthu::cthucc
 
         if ( name == "qjs_bool_not" )
         {
-            binary_insn( insn, qthu::as::not_() );
+            get1( insn );
+            builder.add_instr( qthu::as::not_() );
             return;
     }
 

@@ -39,11 +39,15 @@ int main( int argc, char* const* argv )
     {
         const auto& [ in_name, out_name ] = parse_args( argc, argv );
         std::string content = read_file( in_name );
+
         const auto& tokens = toy::lex( content );
         const auto ast = parse( tokens );
+        
         as::asmbuilder builder;
         generate( builder, ast );
+        
         std::cout << builder.print_asm() << '\n';
+        
         bc::program prog = builder.build();
         prog.write_binary( out_name );
     }

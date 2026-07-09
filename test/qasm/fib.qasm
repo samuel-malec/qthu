@@ -1,4 +1,4 @@
-.function main
+.function __toplevel__
   .args 0
   .locals 1
   .stack_size 5
@@ -7,6 +7,7 @@
     push_i32 5
     call 1        ; fib ( 5 )
     return
+
 
 .function fib
   .args 1

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <iostream>
 #include <vector>
 #include <cstdint>
 #include <map>
@@ -7,11 +8,13 @@
 #include <fstream>
 #include <stdexcept>
 #include <format>
+
 #include "encoder.hpp"
 
 namespace qthu::bc
 {
 
+// vardef represents both arguments and local variables
 struct vardef
 {
     uint32_t var_name_atom = 0; 
@@ -52,8 +55,8 @@ struct function_bytecode
     std::vector< closure_var > closure_vars;
 
     std::vector< uint32_t > cpool_funcs; // indices into program.functions
-    std::vector< uint8_t > bytecode;
-    std::map< std::string, uint32_t > local_labels;
+    std::vector< uint8_t > bytecode;     // raw opcode stream
+    std::map< std::string, uint32_t > local_labels; // TODO: we should find another way to represent labels instead of storing their textual name
 };
 
 struct program
@@ -164,10 +167,10 @@ struct program
     std::vector< uint8_t > to_bytes() const
     {
         if ( functions.empty() )
-            throw std::runtime_error( "Cannot wrap empty program" );
+            throw std::runtime_error( "cannot wrap an empty program" );
 
-        if ( functions[ 0 ].name != "main" )
-            throw std::runtime_error( "Entry function must be first and named 'main'" );
+        if ( functions[ 0 ].name != "__toplevel__" )
+            throw std::runtime_error( "missing toplevel function directive!" );
 
         bytes result;
         result.push_back( 0x05 ); // Bytecode format version

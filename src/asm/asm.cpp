@@ -35,16 +35,14 @@ function_assembly::item* assembly::add_line( document::span span )
         try
         {
             auto dir = directive::from_string( p.sv );
-
             if ( dir.mnemonic == "function" )
             {
                 auto& func = add_function();
-                func.name = dir.name;
+                func.name = dir.fn_name;
                 return &func.add_directive( dir, span );
             }
 
             auto& func = current_function();
-
             if ( dir.mnemonic == "args" )
                 func.arg_count = dir.value;
             else if ( dir.mnemonic == "locals" )
@@ -161,9 +159,9 @@ std::string function_assembly::print() const
         {
             case item::instruction:
                 if ( !item.instr.address.sym.empty() )
-                    result +=  std::format( "    [instruction] {} {} (size: {})\n", item.instr.mnemonic, item.instr.address.sym, item.size );
+                    result += std::format( "    [instruction] {} {} (size: {})\n", item.instr.mnemonic, item.instr.address.sym, item.size );
                 else
-                    result +=std::format( "    [instruction] {} {} (size: {})\n", item.instr.mnemonic, item.instr.operand.as_unsigned(), item.size );
+                    result += std::format( "    [instruction] {} {} (size: {})\n", item.instr.mnemonic, item.instr.operand.as_unsigned(), item.size );
                 break;
             case item::label:
                 result += std::format( "  [label] {}:\n", item.name );

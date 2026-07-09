@@ -17,7 +17,7 @@ using namespace qthu;
 
 config parse_args( int argc, char* const* argv )
 {
-    std::string out_name = "a.out";
+    std::string out_name = "a.qbc";
 
     if ( argc == 0 )
         throw std::runtime_error( "Usage: ./cthucc in_name.ct [-o out.name]" );

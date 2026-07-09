@@ -20,7 +20,7 @@ struct asmbuilder
         current->local_count = locals;
         current->stack_size = stack_size;
 
-        current->add_directive( { .mnemonic = "function", .name = std::string( name ) } );
+        current->add_directive( { .mnemonic = "function", .fn_name = std::string( name ) } );
         current->add_directive( { .mnemonic = "args", .value = args } );
         current->add_directive( { .mnemonic = "locals", .value = locals } );
         current->add_directive( { .mnemonic = "stack_size", .value = stack_size } );

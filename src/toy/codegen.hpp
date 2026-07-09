@@ -180,11 +180,10 @@ inline void emit_call( asbuilder& builder, codegen_context& ctx, const expr& e )
         throw std::runtime_error( "Invalid function call" );
 
     const int env_count = static_cast< int >( ctx.non_main_functions.size() );
-
-    if ( ctx.function_name == "main" )
+    if ( ctx.function_name == "__toplevel__" )
     {
         if ( symb.index == 0 )
-            throw std::runtime_error( "Main cannot call itself with current cpool layout" );
+            throw std::runtime_error( "__toplevel__ cannot call itself with current cpool layout" );
 
         const uint32_t cpool_index = static_cast< uint32_t >( symb.index - 1 );
         builder.add_instr( qthu::as::fclosure_( cpool_index ) );

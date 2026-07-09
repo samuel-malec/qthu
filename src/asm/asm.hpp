@@ -45,7 +45,6 @@ struct function_assembly
     uint16_t arg_count = 0;
     uint16_t local_count = 0;
     uint16_t stack_size = 0;
-
     std::vector< item > items;
 
     auto& add( item&& i )

@@ -67,12 +67,12 @@ structure main
 (
     run = λ
     (
-        int cons_10 → a
+        int cons_5 → a
 
         fib compute        → program
         fᵢⁱ call program a → out
 
-        int cons_1  → b
+        int cons_5  → b
         int eq?  out b → c
 
         bool assert c

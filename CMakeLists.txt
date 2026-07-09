@@ -33,19 +33,19 @@ target_link_libraries(bcrun
 )
 
 # compiler from a toy language to qjs bytecode
-# add_executable(toy)
-# target_sources(toy
-#     PRIVATE
-#     src/toy/toy.cpp
-#     src/asm/asm.cpp
-#     src/asm/instruction.cpp
-#     src/asm/directive.cpp
-# )
+add_executable(toy)
+target_sources(toy
+    PRIVATE
+    src/toy/toy.cpp
+    src/asm/asm.cpp
+    src/asm/instruction.cpp
+    src/asm/directive.cpp
+)
 
-# target_link_libraries(toy
-#     PRIVATE
-#     quickjs-libc
-# )
+target_link_libraries(toy
+    PRIVATE
+    quickjs-libc
+)
 
 # compiler from cthu to qjs bytecode
 add_executable(cthucc)
