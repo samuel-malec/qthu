@@ -76,4 +76,6 @@ add_executable(jscc)
 target_sources(jscc
     PRIVATE
     src/jscc/main.cpp
+    src/jscc/frontend/lexer.cpp
+    src/jscc/frontend/parser.cpp
 )
