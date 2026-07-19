@@ -1,0 +1,51 @@
+type stck
+
+type jsvalue ; every js runtime value
+
+type tag
+type num
+type str
+type bool
+type obj
+
+signature lattice[ T, B ]
+(
+    join ∷ T × T → T
+    bot  ∷ ∅ → T
+    top  ∷ ∅ → T
+    opt  ∷ B × T → T
+)
+
+signature linear[ T, S, B ] : lattice[ T, B ]
+(
+    fork ∷ T → T × T
+    move ∷ T → T
+    push ∷ S × T → S
+    pop  ∷ S → T × S
+)
+
+signature affine[ T, S, B ] : linear[ T, S, B ]
+(
+    drop ∷ T → ∅
+)
+
+signature simple[ T, S, B ] : affine[ T, S, B ]
+(
+    dup ∷ T → T × T
+)
+
+signature tagged[ T, B ]
+(
+    tag_of ∷ T → tag
+    num?   ∷ T → B
+    bool?  ∷ T → B
+    str?   ∷ T → B
+    obj?   ∷ T → B
+    undef? ∷ T → B
+)
+
+signature boxed[ T, U ]
+(
+    box   ∷ U → T
+    unbox ∷ T → U
+)
