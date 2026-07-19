@@ -5,7 +5,10 @@
 #include <string>
 
 #include "frontend/token.hpp"
+#include "frontend/parser.hpp"
+#include "printer/pretty_printer.hpp"
 #include "../common/file.hpp"
+
 
 using config = std::pair< std::string, std::string >;
 
@@ -29,13 +32,19 @@ config parse_config( int argc, char* const* argv )
 
 int main( int argc, char* const* argv )
 {
+    using namespace jscc;
     --argc;
     ++argv;
 
     try
     {
         const auto& [ in_name, out_name ] = parse_config( argc, argv );
-        jscc::source_ptr doc = std::make_shared< jscc::source_file >( in_name, read_file( in_name ) ); 
+        source_ptr doc = std::make_shared< source_file >( in_name, read_file( in_name ) ); 
+        
+        parser p{ doc };
+        auto ast = p.parse();
+        print::pretty_printer printer{};
+        printer.print_ast( ast );
     }
     
     catch( const std::exception& e )

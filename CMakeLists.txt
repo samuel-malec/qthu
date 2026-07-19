@@ -78,4 +78,5 @@ target_sources(jscc
     src/jscc/main.cpp
     src/jscc/frontend/lexer.cpp
     src/jscc/frontend/parser.cpp
+    src/jscc/printer/pretty_printer.cpp
 )
