@@ -67,6 +67,7 @@ int main( int argc, char* const* argv )
     using namespace qthu;
     --argc;
     ++argv;
+
     try
     {
         const auto& [ in_name, out_name ] = parse_args( argc, argv );

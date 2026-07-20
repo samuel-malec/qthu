@@ -1,5 +1,6 @@
-#include "codegen.hpp"
 #include <iostream>
+
+#include "codegen.hpp"
 
 namespace qthu::cthucc
 {

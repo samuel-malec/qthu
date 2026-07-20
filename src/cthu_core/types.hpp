@@ -70,4 +70,9 @@ struct structure_t
 
 using structure_ptr = structure_t *;
 
+struct module_t
+{
+    std::vector< structure_t > structures;
+};
+
 }

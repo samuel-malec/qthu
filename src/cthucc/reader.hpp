@@ -4,9 +4,10 @@
 
 #include "brick-ptr"
 #include "brick-min"
+
 #include "lexer.hpp"
 #include "symtab.hpp"
-#include "types.hpp"
+#include "../cthu_core/types.hpp"
 
 namespace qthu::cthucc
 {

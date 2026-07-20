@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "symtab.hpp"
-#include "types.hpp"
+#include "../cthu_core/types.hpp"
 
 namespace qthu::cthucc
 {
