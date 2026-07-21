@@ -17,27 +17,27 @@ namespace jscc
     {
         return expr{
             .cat = cat,
+            .val_kind = ast::expr::val_kind_t::lvalue,
             .src_loc = peek().loc,
             .val = std::monostate{},
             .id = {},
             .subs = {},
-            .op = ast::ADD,
+            .op = jscc::ADD,
         };
     }
 
-    // TODO: this is probably wrong, but we will fix it once we get to compiling expressions...
     expr parser::make_increment_expr( expr target, bool is_incr )
     {
         expr one = make_expr_node( expr::num_lit );
         one.val = uint64_t{ 1 };
 
         expr bin = make_expr_node( expr::binary );
-        bin.op = is_incr ? ast::ADD : ast::SUB;
+        bin.op = is_incr ? ADD : SUB;
         bin.subs.push_back( target );
         bin.subs.push_back( one );
 
         expr assign = make_expr_node( expr::assign );
-        assign.op = ast::EQ;
+        assign.op = EQ;
         assign.subs.push_back( target );
         assign.subs.push_back( bin );
         return assign;
@@ -53,7 +53,7 @@ namespace jscc
         bin.subs.push_back( rhs );
 
         expr assign = make_expr_node( expr::assign );
-        assign.op = ast::EQ;
+        assign.op = EQ;
         assign.subs.push_back( lhs );
         assign.subs.push_back( bin );
         return assign;
@@ -79,6 +79,7 @@ namespace jscc
 
             auto e = make_expr_node( expr::num_lit );
             e.val = n;
+            e.val_kind = ast::expr::val_kind_t::rvalue;
             return e;
         }
 
@@ -88,6 +89,7 @@ namespace jscc
             bool value = t.value().data == "true";
             auto e = make_expr_node( expr::bool_lit );
             e.val = value;
+            e.val_kind = ast::expr::val_kind_t::rvalue;
             return e;
         }
 
@@ -311,15 +313,13 @@ namespace jscc
             if ( t->data == "=" )
             {
                 auto tmp = make_expr_node( expr::assign );
-                tmp.op = ast::EQ;
+                tmp.op = ::jscc::EQ;
                 tmp.subs.push_back( e.value() );
                 tmp.subs.push_back( rhs.value() );
                 e = std::move( tmp );
             }
             else
-            {
                 e = make_compound_assign( e.value(), t->data, rhs.value() );
-            }
         }
 
         return e;
@@ -506,11 +506,9 @@ namespace jscc
         else
             fetch();
 
-        // FIXME: this is a dirty ( and a little retarded ) hack, but I currently don't have time to implement this in a better way
         auto cond_expr = make_expr_node( expr::bool_lit );
         cond_expr.val = true;
         stmt cond{ .cat = stmt::expr_stmt, .e = cond_expr };
-
         if ( !match( cat::punct, ";" ) )
         {
             auto ce = parse_expr();
@@ -609,20 +607,26 @@ namespace jscc
                 require( cat::punct, "," );
 
             auto id = require( cat::ident );
-            var_decls.push_back( var_decl{ .name = id.data } );
+            var_decls.push_back( var_decl{ .modifier = var_decl::mod_t::let, .name = id.data } );
         }
 
         return var_decls;
     }
-
+    
     std::optional< var_decl > parser::parse_var_decl_info()
     {
-        if ( !match_decl_keyword() )
+        if ( !match_any( cat::keyword, "let", "var", "const" ) )
             return {};
+        
+        auto t = fetch();
+        auto modifier = var_decl::mod_t::var;
+        if ( t.data == "let" )
+            modifier = var_decl::mod_t::let;
+        else if ( t.data == "const" )
+            modifier = var_decl::mod_t::con;
 
-        fetch(); // consume let / const / var
         auto id = require( cat::ident );
-        var_decl vdecl{ .name = id.data, .e = std::nullopt };
+        var_decl vdecl{ .modifier = modifier, .name = id.data, .e = std::nullopt };
 
         if ( match( cat::punct, ";" ) )
             return vdecl;
@@ -694,8 +698,7 @@ namespace jscc
     std::optional< toplevel > parser::parse_toplevel()
     {
         std::optional< toplevel > res;
-        if ( ( res = parse_fn_decl() )
-            || ( res = parse_var_decl_info() )
+        if ( ( res = parse_fn_decl() ) 
             || ( res = parse_stmt() ) )
             return res;
 

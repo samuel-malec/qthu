@@ -16,7 +16,7 @@ namespace jscc
 struct parser : token_sink
 {
     using cat = token::cat_t;
-    using op_kind = ast::op_kind;
+    using op_kind = ::jscc::op_kind;
     using expr = ast::expr;
     using stmt = ast::stmt;
     using toplevel = ast::toplevel;
@@ -54,35 +54,28 @@ struct parser : token_sink
         return tok;
     }
 
-    bool match_decl_keyword()
-    {
-        return match( cat::keyword, "let" )
-            || match( cat::keyword, "const" )
-            || match( cat::keyword, "var" );
-    }
-
     op_kind op_kind_from_str( std::string_view data )
     {
-        if ( data == "+" ) return ast::ADD;
-        if ( data == "-" ) return ast::SUB;
-        if ( data == "*" ) return ast::MUL;
-        if ( data == "/" ) return ast::DIV;
-        if ( data == "%" ) return ast::MOD;
-        if ( data == "<<" ) return ast::SHL;
-        if ( data == ">>" ) return ast::SHR;
-        if ( data == "==" ) return ast::EQ;
-        if ( data == "===" ) return ast::EQ;   
-        if ( data == "!=" ) return ast::NEQ;
-        if ( data == "!==" ) return ast::NEQ;  
-        if ( data == "<" ) return ast::LT;
-        if ( data == "<=" ) return ast::LEQ;
-        if ( data == ">" ) return ast::GT;
-        if ( data == ">=" ) return ast::GEQ;
-        if ( data == "!" ) return ast::NOT;
-        if ( data == "&&" ) return ast::AND;
-        if ( data == "||" ) return ast::OR;
+        if ( data == "+" ) return ::jscc::ADD;
+        if ( data == "-" ) return ::jscc::SUB;
+        if ( data == "*" ) return ::jscc::MUL;
+        if ( data == "/" ) return ::jscc::DIV;
+        if ( data == "%" ) return ::jscc::MOD;
+        if ( data == "<<" ) return ::jscc::SHL;
+        if ( data == ">>" ) return ::jscc::SHR;
+        if ( data == "==" ) return ::jscc::EQ;
+        if ( data == "===" ) return ::jscc::EQ;
+        if ( data == "!=" ) return ::jscc::NEQ;
+        if ( data == "!==" ) return ::jscc::NEQ;
+        if ( data == "<" ) return ::jscc::LT;
+        if ( data == "<=" ) return ::jscc::LEQ;
+        if ( data == ">" ) return ::jscc::GT;
+        if ( data == ">=" ) return ::jscc::GEQ;
+        if ( data == "!" ) return ::jscc::NOT;
+        if ( data == "&&" ) return ::jscc::AND;
+        if ( data == "||" ) return ::jscc::OR;
         error( "Unknown operator:", data );
-        return ast::ADD;
+        return ::jscc::ADD;
     }
 
     bool match( cat c, std::string_view data = "" )

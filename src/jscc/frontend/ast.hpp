@@ -9,43 +9,9 @@
 #include <vector>
 
 #include "token.hpp"
+#include "../sema/types.hpp"
 
 namespace jscc::ast {
-
-enum op_kind 
-{
-    ADD, SUB, MUL, DIV,
-    MOD, SHL, SHR,
-
-    EQ, NEQ, LT, LEQ, GT, GEQ,
-
-    NOT, AND, OR,
-};
-
-inline std::ostream& operator<<( std::ostream& os, const op_kind op )
-{
-    switch ( op )
-    {
-        case ADD:   return os << "+";
-        case SUB:   return os << "-";
-        case MUL:   return os << "*";
-        case DIV:   return os << "/";
-        case MOD:   return os << "%";
-        case SHL:   return os << "<<";
-        case SHR:   return os << ">>";
-        case EQ:    return os << "==";
-        case NEQ:   return os << "!=";
-        case LT:    return os << "<";
-        case LEQ:   return os << "<=";
-        case GT:    return os << ">";
-        case GEQ:   return os << ">=";
-        case NOT:   return os << "!";
-        case AND:   return os << "&&";
-        case OR:    return os << "||";
-    }
-
-    return os << "idk";
-}
 
 struct expr;
 struct stmt;
@@ -66,13 +32,25 @@ struct expr
         call,
     } cat;
 
+    enum val_kind_t
+    {
+        lvalue,
+        rvalue,
+    } val_kind;
+
     location src_loc;
     std::variant< std::monostate, uint64_t, bool > val;
     std::string_view id;
     std::vector< expr > subs{};
-    op_kind op;
+    jscc::op_kind op;
     
     expr& operator[]( int n )
+    {
+        assert( n < subs.size() );
+        return subs[ n ];
+    }
+
+    const expr& operator[]( int n ) const
     {
         assert( n < subs.size() );
         return subs[ n ];
@@ -81,6 +59,7 @@ struct expr
 
 struct var_decl 
 {
+    enum mod_t { let, var, con } modifier;
     std::string_view name;
     std::optional< expr > e;
 };
@@ -111,6 +90,12 @@ struct stmt
         assert( n < subs.size() );
         return subs[ n ];
     }
+
+    const stmt& operator[]( int n ) const
+    {
+        assert( n < subs.size() );
+        return subs[ n ];
+    }
 };
 
 struct fn_decl
@@ -121,7 +106,7 @@ struct fn_decl
     std::vector< var_decl > params;
 };
 
-using toplevel = std::variant< fn_decl, var_decl, stmt >;
+using toplevel = std::variant< fn_decl, stmt >;
 
 struct program 
 {
