@@ -94,7 +94,7 @@ struct analysis_result
     std::unordered_map< const ast::fn_decl*, function_id > function_declarations;
 };
 
-class analyzer
+struct analyzer
 {
     analysis_result result;
     std::map< std::string, name_id, std::less<> > interned_names;

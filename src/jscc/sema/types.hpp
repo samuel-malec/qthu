@@ -5,8 +5,7 @@ namespace jscc
 
 enum op_kind
 {
-    ADD, SUB, MUL, DIV,
-    MOD, SHL, SHR,
+    ADD, SUB, MUL, DIV, MOD, SHL, SHR,
 
     EQ, NEQ, LT, LEQ, GT, GEQ,
 
