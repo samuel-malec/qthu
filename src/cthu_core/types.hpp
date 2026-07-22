@@ -4,7 +4,7 @@
 #include <map>
 #include <vector>
 
-namespace qthu::cthucc
+namespace qthu::cthuc
 {
 
 struct atom

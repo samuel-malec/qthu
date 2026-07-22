@@ -48,35 +48,35 @@ target_link_libraries(toy
 )
 
 # compiler from cthu to qjs bytecode
-add_executable(cthucc)
-target_sources(cthucc
+add_executable(cthuc)
+target_sources(cthuc
     PRIVATE
-    src/cthucc/main.cpp
-    src/cthucc/lexer.cpp
-    src/cthucc/reader.cpp
-    src/cthucc/codegen.cpp
+    src/cthuc/main.cpp
+    src/cthuc/lexer.cpp
+    src/cthuc/reader.cpp
+    src/cthuc/codegen.cpp
     src/asm/asm.cpp
     src/asm/instruction.cpp
     src/asm/directive.cpp
 )
 
-target_include_directories(cthucc
+target_include_directories(cthuc
     PRIVATE
     ${CMAKE_SOURCE_DIR}/bricks
 )
 
-target_link_libraries(cthucc
+target_link_libraries(cthuc
     PRIVATE
     quickjs-libc
 )
 
 # compiler from javascript to cthu
-add_executable(jscc)
+add_executable(jsc)
 
-target_sources(jscc
+target_sources(jsc
     PRIVATE
-    src/jscc/main.cpp
-    src/jscc/frontend/lexer.cpp
-    src/jscc/frontend/parser.cpp
-    src/jscc/printer/pretty_printer.cpp
+    src/jsc/main.cpp
+    src/jsc/frontend/lexer.cpp
+    src/jsc/frontend/parser.cpp
+    src/jsc/printer/pretty_printer.cpp
 )
