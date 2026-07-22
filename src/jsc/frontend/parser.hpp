@@ -10,7 +10,7 @@
 #include "ast.hpp"
 #include "lexer.hpp"
 
-namespace jsc
+namespace qthu::jsc
 {
 
 struct parser : token_sink

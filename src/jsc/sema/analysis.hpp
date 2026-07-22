@@ -13,7 +13,7 @@
 
 #include "../frontend/ast.hpp"
 
-namespace jsc::sema
+namespace qthu::jsc::sema
 {
 
 struct name_id

@@ -7,7 +7,7 @@
 #include "../sema/types.hpp"
 #include "../ir/hir.hpp"
 
-namespace jsc::hir
+namespace qthu::jsc::hir
 {
 
 struct ast_to_hir

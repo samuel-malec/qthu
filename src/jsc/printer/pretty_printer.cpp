@@ -2,7 +2,7 @@
 
 #include "pretty_printer.hpp"
 
-namespace jsc::print
+namespace qthu::jsc::print
 {
 
 using expr = ast::expr;

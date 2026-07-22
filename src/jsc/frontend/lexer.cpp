@@ -4,7 +4,7 @@
 
 #include "lexer.hpp"
 
-namespace jsc
+namespace qthu::jsc
 {
 
 void lexer::next()

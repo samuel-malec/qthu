@@ -11,7 +11,8 @@
 #include "token.hpp"
 #include "../sema/types.hpp"
 
-namespace jsc::ast {
+namespace qthu::jsc::ast
+{
 
 struct expr;
 struct stmt;

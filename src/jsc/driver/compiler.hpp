@@ -9,7 +9,7 @@
 #include "../lower/ast2hir.hpp"
 #include "../sema/analysis.hpp"
 
-namespace jsc
+namespace qthu::jsc
 {
 
 struct compiler

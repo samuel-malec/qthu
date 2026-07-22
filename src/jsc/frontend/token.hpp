@@ -4,7 +4,7 @@
 #include <string_view>
 #include <memory>
 
-namespace jsc
+namespace qthu::jsc
 {
 
 struct source_file

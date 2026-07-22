@@ -10,7 +10,7 @@
 #include "../ir/hir.hpp"
 #include "../sema/analysis.hpp"
 
-namespace jsc::print
+namespace qthu::jsc::print
 {
 
 struct pretty_printer

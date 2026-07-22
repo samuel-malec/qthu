@@ -7,7 +7,7 @@
 #include "../sema/types.hpp"
 #include "../sema/analysis.hpp"
 
-namespace jsc::hir
+namespace qthu::jsc::hir
 {
 
 struct expr_id { std::uint32_t id; };

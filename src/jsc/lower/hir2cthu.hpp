@@ -1,9 +1,13 @@
 #pragma once
 
-#include "../cthu_core/types.hpp"
+#include "../../cthu_core/types.hpp"
 #include "../ir/hir.hpp"
 
-namespace jsc
+namespace qthu::jsc
 {
     
+    inline lower2cthu( hir::program& prog )
+    {
+
+    }
 }

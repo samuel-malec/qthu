@@ -1,6 +1,6 @@
 #pragma once
 
-namespace jsc
+namespace qthu::jsc
 {
 
 enum op_kind

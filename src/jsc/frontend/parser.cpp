@@ -3,7 +3,7 @@
 
 #include "parser.hpp"
 
-namespace jsc
+namespace qthu::jsc
 {
     using cat = token::cat_t;
     using expr = ast::expr;

@@ -8,7 +8,7 @@
 
 int main( int argc, char* const* argv )
 {
-    using namespace jsc;
+    using namespace qthu::jsc;
     --argc;
     ++argv;
 

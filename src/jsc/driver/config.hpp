@@ -5,7 +5,7 @@
 #include <string>
 #include <stdexcept>
 
-namespace jsc
+namespace qthu::jsc
 {
 
 struct config

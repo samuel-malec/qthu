@@ -8,7 +8,7 @@
 
 #include "token.hpp"
 
-namespace jsc 
+namespace qthu::jsc 
 {
 
 static const std::set< std::string_view > keywords = {
