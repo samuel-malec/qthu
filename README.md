@@ -1,7 +1,6 @@
 ## Overview
 Cthulhu is a low-level, statically typed, functional programming language.
-It is designed to be suitable for program transformation, testing, and veri-
-fication.
+It is designed to be suitable for program transformation, testing, and verification.
 This repository implements the compiler toolchain for the JavaScript dialect of Cthulhu.
 
 Currently, two compilers are being implemented:
