@@ -20,14 +20,16 @@ struct ast_to_hir
 
     expr_id append_expr( expr e )
     {
+        expr_id id{ static_cast< uint32_t >( fn.expressions.size() ) };
         fn.expressions.push_back( std::move( e ) );
-        return expr_id{ static_cast< uint32_t >( fn.expressions.size() ) };
+        return id;
     }
 
     stmt_id append_stmt( stmt s )
     {
+        stmt_id id{ static_cast< uint32_t >( fn.statements.size() ) };
         fn.statements.push_back( std::move( s ) );
-        return stmt_id{ static_cast< uint32_t >( fn.statements.size() ) };
+        return id;
     }
     
     expr_id lower_expr( ast::expr& e )
@@ -137,11 +139,6 @@ struct ast_to_hir
 
         throw std::runtime_error( "unknown statement during HIR lowering" );
     }
-
-    stmt_id lower_body( std::vector< ast::stmt >& body )
-    {
-        return block( body );
-    }
 };
 
 inline hir::program lower2hir( ast::program& ast, sema::analysis_result& semantics )
@@ -160,7 +157,7 @@ inline hir::program lower2hir( ast::program& ast, sema::analysis_result& semanti
             fn.params.push_back( hir::var_id{ semantics.declarations.at( &param ).value } );
         
         ast_to_hir lowerer{ semantics, fn };
-        fn.body_root = lowerer.lower_body( src_decl->body );
+        fn.body_root = lowerer.block( src_decl->body );
         res.functions.push_back( std::move( fn ) );
     }
 
