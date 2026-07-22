@@ -31,9 +31,9 @@ struct pretty_printer
 
     void print_ast( std::ostream& out, ast::program& ast );
 
-    void print_hir_expr( std::ostream& out, hir::function& fn, hir::expr_id e, sema::analysis_result& semantics );
+    void print_hir_expr( std::ostream& out, hir::function& fn, hir::expr_id e, int depth );
 
-    void print_hir_stmt( std::ostream& out, hir::function& fn, hir::stmt_id s, sema::analysis_result& semantics );
+    void print_hir_stmt( std::ostream& out, hir::function& fn, hir::stmt_id s, int depth );
 
     void print_hir( std::ostream& out, hir::program& hir, sema::analysis_result& semantics );
 

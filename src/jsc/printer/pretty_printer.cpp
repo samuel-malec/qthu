@@ -232,58 +232,66 @@ bool is_empty_block( hir::function& fn, hir::stmt_id s )
     return block && block->stmts.empty();
 }
 
-void pretty_printer::print_hir_expr( std::ostream& out, hir::function& fn, hir::expr_id e, sema::analysis_result& semantics )
+void pretty_printer::print_hir_expr( std::ostream& out, hir::function& fn, hir::expr_id e, int depth )
 {
     const auto& node = fn.get( e );
 
     std::visit( overloaded{
         [ & ]( const hir::expr::int_lit& lit )
         {
-            out << lit.value;
+            out << "[int_lit:" << node.typ << "] " << lit.value;
         },
         [ & ]( const hir::expr::bool_lit& lit )
         {
-            out << ( lit.value ? "true" : "false" );
+            out << "[bool_lit:" << node.typ << "] " << ( lit.value ? "true" : "false" );
         },
         [ & ]( const hir::expr::var& v )
         {
-            out << "v" << v.id.id;
+            out << "[var:" << node.typ << "] " << "v" << v.id.id;
         },
         [ & ]( const hir::expr::unary& u )
         {
-            out << "(" << u.op;
-            print_hir_expr( out, fn, u.sub, semantics );
-            out << ")";
+            out << "[unary:" << node.typ << "] " << u.op << "\n";
+            print_indent( out, depth + 1 );
+            print_hir_expr( out, fn, u.sub, depth + 1 );
         },
         [ & ]( const hir::expr::binary& b )
         {
-            out << "(";
-            print_hir_expr( out, fn, b.left, semantics );
-            out << " " << b.op << " ";
-            print_hir_expr( out, fn, b.right, semantics );
-            out << ")";
+            out << "[binary:" << node.typ << "] " << b.op << "\n";
+            print_indent( out, depth + 1 );
+            print_hir_expr( out, fn, b.left, depth + 1 );
+            out << "\n";
+            print_indent( out, depth + 1 );
+            print_hir_expr( out, fn, b.right, depth + 1 );
         },
         [ & ]( const hir::expr::assign& a )
         {
-            out << "v" << a.target.id << " = ";
-            print_hir_expr( out, fn, a.value, semantics );
+            out << "[assign:" << node.typ << "] v" << a.target.id << " =\n";
+            print_indent( out, depth + 1 );
+            print_hir_expr( out, fn, a.value, depth + 1 );
         },
         [ & ]( const hir::expr::call& c )
         {
-            const auto& callee = semantics.functions.at( c.target.value );
-            out << semantics.names.at( callee.name.value ) << "(";
+            out << "[call:" << node.typ << "] " << c.target.value << "(";
+            if ( c.args.empty() )
+            {
+                out << ")";
+                return;
+            }
+            out << "\n";
             for ( size_t i = 0; i < c.args.size(); ++i )
             {
-                print_hir_expr( out, fn, c.args[ i ], semantics );
-                if ( i + 1 != c.args.size() )
-                    out << ", ";
+                print_indent( out, depth + 1 );
+                print_hir_expr( out, fn, c.args[ i ], depth + 1 );
+                out << ( i + 1 != c.args.size() ? ",\n" : "\n" );
             }
+            print_indent( out, depth );
             out << ")";
         },
     }, node.data );
 }
 
-void pretty_printer::print_hir_stmt( std::ostream& out, hir::function& fn, hir::stmt_id s, sema::analysis_result& semantics )
+void pretty_printer::print_hir_stmt( std::ostream& out, hir::function& fn, hir::stmt_id s, int depth )
 {
     std::function< void( hir::stmt_id, int ) > go = [ & ]( hir::stmt_id s, int depth )
     {
@@ -293,12 +301,13 @@ void pretty_printer::print_hir_stmt( std::ostream& out, hir::function& fn, hir::
             [ & ]( const hir::stmt::expr_stmt& st )
             {
                 print_indent( out, depth );
-                print_hir_expr( out, fn, st.expr, semantics );
+                out << "[expr_stmt] ";
+                print_hir_expr( out, fn, st.expr, depth );
                 out << ";\n";
             },
             [ & ]( const hir::stmt::block& st )
             {
-                print_indent( out, depth ); out << "{\n";
+                print_indent( out, depth ); out << "[block] {\n";
                 for ( const auto& sub : st.stmts )
                     go( sub, depth + 1 );
                 print_indent( out, depth ); out << "}\n";
@@ -306,42 +315,42 @@ void pretty_printer::print_hir_stmt( std::ostream& out, hir::function& fn, hir::
             [ & ]( const hir::stmt::let_stmt& st )
             {
                 print_indent( out, depth );
-                out << "let v" << st.target.id << " = ";
-                print_hir_expr( out, fn, st.value, semantics );
+                out << "[let_stmt:" << st.typ << "] let v" << st.target.id << " = ";
+                print_hir_expr( out, fn, st.value, depth );
                 out << ";\n";
             },
             [ & ]( const hir::stmt::if_stmt& st )
             {
                 print_indent( out, depth );
-                out << "if ( ";
-                print_hir_expr( out, fn, st.cond, semantics );
+                out << "[if_stmt] if ( ";
+                print_hir_expr( out, fn, st.cond, depth );
                 out << " )\n";
                 go( st.then_branch, depth );
                 if ( !is_empty_block( fn, st.else_branch ) )
                 {
-                    print_indent( out, depth ); out << "else\n";
+                    print_indent( out, depth ); out << "[else]\n";
                     go( st.else_branch, depth );
                 }
             },
             [ & ]( const hir::stmt::loop_stmt& st )
             {
-                print_indent( out, depth ); out << "loop\n";
+                print_indent( out, depth ); out << "[loop_stmt] loop\n";
                 go( st.body, depth );
             },
             [ & ]( const hir::stmt::ret_stmt& st )
             {
                 print_indent( out, depth );
-                out << "return ";
-                print_hir_expr( out, fn, st.value, semantics );
+                out << "[ret_stmt] return ";
+                print_hir_expr( out, fn, st.value, depth );
                 out << ";\n";
             },
             [ & ]( const hir::stmt::brk& )
             {
-                print_indent( out, depth ); out << "break;\n";
+                print_indent( out, depth ); out << "[brk] break;\n";
             },
             [ & ]( const hir::stmt::cont& )
             {
-                print_indent( out, depth ); out << "continue;\n";
+                print_indent( out, depth ); out << "[cont] continue;\n";
             },
         }, node.data );
     };
@@ -357,7 +366,10 @@ void pretty_printer::print_hir( std::ostream& out, hir::program& hir, sema::anal
         for ( size_t i = 0; i < fn.params.size(); ++i )
             out << "v" << fn.params[ i ].id << ( i == fn.params.size() - 1 ? "" : ". " );
         out << " )\n";
-        print_hir_stmt( out, fn, fn.body_root, semantics );
+        
+        const hir::stmt& s = fn.get( fn.body_root );
+        assert ( std::holds_alternative< hir::stmt::block >( s.data ) );
+        print_hir_stmt( out, fn, fn.body_root, 1 );
     }    
 }
 
