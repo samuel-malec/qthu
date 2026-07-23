@@ -16,29 +16,14 @@
 namespace qthu::jsc::sema
 {
 
-struct name_id
+// TODO: record every free variable referenced by nested functions
+template< typename... Args >
+inline void error( Args&&... args )
 {
-    uint32_t value;
-    auto operator<=>( const name_id& ) const = default;
-};
-
-struct binding_id
-{
-    uint32_t value;
-    auto operator<=>( const binding_id& ) const = default;
-};
-
-struct function_id
-{
-    uint32_t value;
-    auto operator<=>( const function_id& ) const = default;
-};
-
-struct scope_id
-{
-    uint32_t value;
-    auto operator<=>( const scope_id& ) const = default;
-};
+    std::ostringstream out;
+    ( out << ... << std::forward< Args >( args ) );
+    throw std::runtime_error( out.str() );
+}
 
 template< typename... Args >
 inline void error( const location& where, Args&&... args )
@@ -49,317 +34,493 @@ inline void error( const location& where, Args&&... args )
     throw std::runtime_error( out.str() );
 }
 
+struct name_id
+{
+    uint32_t value;
+
+    auto operator<=>( const name_id& ) const = default;
+};
+
+struct symbol_id
+{
+    uint32_t value;
+};
+
+struct binding_id
+{
+    uint32_t value;
+};
+
+struct function_id
+{
+    uint32_t value;
+};
+
+struct scope_id
+{
+    uint32_t value;
+};
+
+struct symbol
+{
+    symbol_id id;
+    
+    enum class kind_t
+    {
+        variable,
+        function,
+    } kind;
+
+    name_id name;
+    scope_id declared_in;
+
+    std::optional< binding_id > binding;
+    std::optional< function_id > function;
+};
+
 struct binding
 {
     binding_id id;
-    name_id name;
-    ast::var_decl::mod_t declaration_kind;
+    ast::var_declaration::kind_t kind;
     scope_id declared_in;
-    location declared_at;
     bool initialized = false;
 };
 
 struct function
 {
     function_id id;
-    name_id name;
-    const ast::fn_decl* declaration;
     scope_id scope;
     size_t arity;
 };
 
 struct scope
 {
-    enum class kind { global, function, loop, block };
+    enum class kind
+    {
+        global,
+        function,
+        loop,
+        block,
+    };
 
     scope_id id;
     kind category;
+
     std::optional< scope_id > parent;
-    std::optional< scope_id > enclosing_function;
-    std::map< name_id, binding_id > bindings;
+    std::optional< function_id > enclosing_function;
+    std::map< name_id, symbol_id > declarations;
+
+    void add( name_id nid, symbol_id sid, std::vector< std::string >& names )
+    {
+        if ( declarations.contains( nid ) )
+            error( "Duplicate declaration of ", names[ nid.value ] );
+
+        declarations[ nid ] = sid;
+    }
 };
 
 struct analysis_result
 {
     std::vector< std::string > names;
+    std::vector< symbol > declarations;
     std::vector< binding > bindings;
     std::vector< function > functions;
     std::vector< scope > scopes;
 
-    std::unordered_map< const ast::expr*, binding_id > identifier_bindings;
-    std::unordered_map< const ast::expr*, binding_id > assignment_targets;
-    std::unordered_map< const ast::expr*, function_id > direct_calls;
-    std::unordered_map< const ast::var_decl*, binding_id > declarations;
-    std::unordered_map< const ast::stmt*, scope_id > statement_scopes;
-    std::unordered_map< const ast::fn_decl*, function_id > function_declarations;
+    function_id global_function;
+    std::unordered_map< ast::stmt*, scope_id > stmt_scopes;
+    std::unordered_map< ast::var_declarator*, binding_id > declarator_bindings;
+    std::unordered_map< ast::param*, binding_id > param_bindings;
+    std::unordered_map< ast::expr*, binding_id> identifier_bindings;
+    std::unordered_map< ast::expr*, binding_id > assign_bindings;
+    std::unordered_map< ast::expr*, function_id > direct_calls;
+    std::unordered_map< ast::stmt*, function_id > stmt_functions;
 };
 
 struct analyzer
 {
     analysis_result result;
     std::map< std::string, name_id, std::less<> > interned_names;
-    std::map< name_id, function_id > global_functions;
+
+    bool is_in_loop( scope_id current )
+    {
+        std::optional< scope_id > curr_scope_id = current;
+        while ( curr_scope_id )
+        {
+            auto& curr_scope = get_scope( curr_scope_id.value() ); 
+            if ( curr_scope.category == scope::kind::loop )
+                return true;
+            curr_scope_id = curr_scope.parent;
+        }
+
+        return false;
+    }
 
     name_id intern( std::string_view name )
     {
         if ( auto it = interned_names.find( name ); it != interned_names.end() )
             return it->second;
 
-        name_id id{ static_cast< uint32_t >( result.names.size() ) };
-        result.names.emplace_back( name );
-        interned_names.emplace( result.names.back(), id );
+        name_id id{ .value = static_cast< uint32_t >( result.names.size() ) };
+        std::string sname = std::string( name );
+        interned_names[ sname ] = id;
+        result.names.push_back( sname );
         return id;
     }
 
-    scope_id add_scope( scope::kind kind, std::optional< scope_id > parent )
+    // NOTE: when creating function scope, the enclosing function needs to be set manually, 
+    // because it needs to be created before the function itself 
+    scope_id declare_scope( scope::kind k, std::optional< scope_id > parent )
     {
         scope_id id{ static_cast< uint32_t >( result.scopes.size() ) };
-        std::optional< scope_id > enclosing_function;
-        if ( kind == scope::kind::function )
-            enclosing_function = id;
-        else if ( parent )
-            enclosing_function = result.scopes.at( parent->value ).enclosing_function;
+        scope s{ .id = id, .category = k, .parent = parent };
+        if ( parent )
+            s.enclosing_function = get_scope( parent.value() ).enclosing_function;
 
-        result.scopes.push_back( scope{ id, kind, parent, enclosing_function } );
+        result.scopes.push_back( s );
         return id;
     }
 
-    scope_id declaration_scope( scope_id current, ast::var_decl::mod_t kind ) const
+    binding_id add_binding( ast::var_declaration::kind_t k, scope_id declared_in, bool initialized )
     {
-        if ( kind != ast::var_decl::mod_t::var )
-            return current;
+        binding_id bid{ static_cast< uint32_t >( result.bindings.size() ) }; 
+        binding b{ .id = bid, 
+                    .kind = k,
+                    .declared_in = declared_in,
+                    .initialized = initialized,
+                };
 
-        for ( auto scope = current;; )
+        result.bindings.push_back( b );
+        return bid;
+    }
+
+    symbol_id add_symbol( symbol::kind_t k, name_id name, scope_id declared_in,
+                          std::optional< binding_id > binding,
+                          std::optional< function_id > function )
+    {
+
+        symbol_id sid{ .value = static_cast< uint32_t >( result.declarations.size() ) };
+        symbol sym{ .id = sid,
+                    .kind = k,
+                    .name = name,
+                    .declared_in = declared_in,
+                    .binding = binding,
+                    .function = function,
+                };
+
+        result.declarations.push_back( sym );
+        return sid;
+    }
+
+    symbol& get_symbol( symbol_id id )
+    {
+        return result.declarations.at( id.value );
+    }
+
+    binding& get_binding( binding_id id )
+    {
+        return result.bindings.at( id.value );
+    }
+
+    function& get_function( function_id id )
+    {
+        return result.functions.at( id.value );
+    }
+
+    scope& get_scope( scope_id id )
+    {
+        return result.scopes.at( id.value );
+    }
+
+    void declare_var( ast::var_declaration& vd, scope_id curr_scope )
+    {   
+        for ( auto& declarator : vd.declarators )
         {
-            const auto& candidate = result.scopes.at( scope.value );
-            if ( candidate.category == scope::kind::function || candidate.category == scope::kind::global )
-                return scope;
-            scope = *candidate.parent;
+            name_id nid = intern( declarator.name );
+            binding_id bid = add_binding( vd.kind, curr_scope, declarator.init.has_value() );
+            result.declarator_bindings[ &declarator ] = bid;
+            symbol_id sid = add_symbol( symbol::kind_t::variable, nid, curr_scope, bid, {} );
+            get_scope( curr_scope ).add( nid, sid, result.names );
         }
     }
 
-    binding_id declare( const ast::var_decl& declaration, scope_id current, bool initialized )
+    binding_id add_param_binding( ast::param& p, scope_id curr_scope )
     {
-        const auto target_scope = declaration_scope( current, declaration.modifier );
-        auto& target = result.scopes.at( target_scope.value );
-        const auto name = intern( declaration.name );
-        if ( target.bindings.contains( name ) )
-            error( declaration.e ? declaration.e->src_loc : location{}, "redeclaration of ", declaration.name );
-
-        binding_id id{ static_cast< uint32_t >( result.bindings.size() ) };
-        result.bindings.push_back( binding{
-            id, name, declaration.modifier, target_scope,
-            declaration.e ? declaration.e->src_loc : location{}, initialized,
-        } );
-        target.bindings.emplace( name, id );
-        result.declarations.emplace( &declaration, id );
-        return id;
+        name_id nid = intern( p.name );
+        binding_id bid = add_binding( ast::var_declaration::kind_t::let, curr_scope, true );
+        result.param_bindings[ &p ] = bid;
+        symbol_id sid = add_symbol( symbol::kind_t::variable, nid, curr_scope, bid, {} );
+        get_scope( curr_scope ).add( nid, sid, result.names );
+        return bid;
     }
-
-    std::optional< binding_id > lookup( scope_id current, std::string_view name ) const
+    
+    std::optional< symbol_id > lookup( scope_id current, std::string_view name )
     {
-        const auto it = interned_names.find( name );
-        if ( it == interned_names.end() )
+        if ( !interned_names.contains( name ) )
             return {};
 
-        for ( auto scope = std::optional< scope_id >{ current }; scope; )
+        name_id nid = intern( name );
+        std::optional< scope_id > curr_id = current;
+
+        while ( curr_id )
         {
-            const auto& current_scope = result.scopes.at( scope->value );
-            if ( auto binding = current_scope.bindings.find( it->second ); binding != current_scope.bindings.end() )
-                return binding->second;
-            scope = current_scope.parent;
+            auto& curr_scope = get_scope( curr_id.value() );
+            auto it = curr_scope.declarations.find( nid );
+            if ( it != curr_scope.declarations.end() )
+                return it->second;
+            curr_id = curr_scope.parent; 
         }
+
         return {};
     }
-
-    bool in_loop( scope_id current ) const
+    
+    void declare_block( ast::block& b, scope_id curr_scope )
     {
-        for ( auto scope = std::optional< scope_id >{ current }; scope; scope = result.scopes.at( scope->value ).parent )
-            if ( result.scopes.at( scope->value ).category == scope::kind::loop )
-                return true;
-        return false;
+        for ( auto& stmt : b.stmts )
+            declare_stmt( *stmt, curr_scope );
     }
 
-    bool in_function( scope_id current ) const
+    // TODO: think about what happens when we have an empty statement, can it happen ? -> investigate also in dungeon
+    void declare_stmt( ast::stmt& s, scope_id curr_scope )
     {
-        return result.scopes.at( current.value ).enclosing_function.has_value();
-    }
-
-    void build_statement( const ast::stmt& statement, scope_id current )
-    {
-        result.statement_scopes.emplace( &statement, current );
-        switch ( statement.cat )
+        if ( auto* b = std::get_if< ast::block >( &s.data ) )
         {
-            case ast::stmt::var_dclr:
-                declare( statement.vdecl, current, false );
-                return;
+            scope_id new_scope = declare_scope( scope::kind::block, curr_scope );
+            get_scope( new_scope ).enclosing_function =
+                get_scope( curr_scope ).enclosing_function;
 
-            case ast::stmt::block:
-            {
-                const auto child = add_scope( scope::kind::block, current );
-                result.statement_scopes[ &statement ] = child;
-                for ( const auto& substatement : statement.subs )
-                    build_statement( substatement, child );
-                return;
-            }
+            result.stmt_scopes[ &s ] = new_scope;
+            declare_block( *b, new_scope );
+        }
+        else if ( auto* vd = std::get_if< ast::var_declaration >( &s.data ) )
+        {
+            declare_var( *vd, curr_scope );
+        }
+        else if ( auto* fd = std::get_if< ast::fn_declaration >( &s.data ) )
+        {
+            scope_id fn_scope = declare_scope( scope::kind::function, curr_scope );
+            function_id fid{ .value = static_cast< uint32_t >( result.functions.size() ) };
+            result.stmt_scopes[ &s ] = fn_scope;
+            result.stmt_functions[ &s ] = fid;
+            
+            function f{ .id = fid, .scope = fn_scope, .arity = fd->params.size() };
+            result.functions.push_back( f );
+            
+            get_scope( fn_scope ).enclosing_function = fid;
 
-            case ast::stmt::for_stmt:
-            case ast::stmt::while_stmt:
-            case ast::stmt::do_while_stmt:
-            {
-                const auto child = add_scope( scope::kind::loop, current );
-                result.statement_scopes[ &statement ] = child;
-                for ( const auto& substatement : statement.subs )
-                    build_statement( substatement, child );
-                return;
-            }
+            name_id nid = intern( fd->name );
+            symbol_id sid = add_symbol( symbol::kind_t::function, nid, curr_scope, {}, fid );
+            get_scope( curr_scope ).add( nid, sid, result.names );
 
-            default:
-                for ( const auto& substatement : statement.subs )
-                    build_statement( substatement, current );
-                return;
+            for ( auto& param : fd->params )
+                add_param_binding( param, fn_scope );
+            
+            declare_block( fd->body, fn_scope );
+        }
+        else if ( auto* i = std::get_if< ast::if_stmt >( &s.data ) )
+        {
+            declare_stmt( *i->then_branch, curr_scope );
+            if ( i->else_branch )
+                declare_stmt( *i->else_branch, curr_scope );
+        }
+        else if ( auto* fl = std::get_if< ast::for_stmt >( &s.data ) )
+        {
+            scope_id loop_scope = declare_scope( scope::kind::loop, curr_scope );
+            result.stmt_scopes[ &s ] = loop_scope;
+            if ( fl->init )
+                declare_stmt( *fl->init, loop_scope );
+            declare_stmt( *fl->body, loop_scope );
+        }
+        else if ( auto* w = std::get_if< ast::while_stmt >( &s.data ) )
+        {
+            scope_id loop_scope = declare_scope( scope::kind::loop, curr_scope );
+            result.stmt_scopes[ &s ] = loop_scope;
+            declare_stmt( *w->body, loop_scope );
+        }
+        else if ( auto* dw = std::get_if< ast::do_while_stmt >( &s.data ) )
+        {
+            scope_id loop_scope = declare_scope( scope::kind::loop, curr_scope );
+            result.stmt_scopes[ &s ] = loop_scope;
+            declare_stmt( *dw->body, loop_scope );
         }
     }
 
-    void resolve_expression( const ast::expr& expression, scope_id current )
+    void resolve_expr( ast::expr& e, scope_id curr_scope )
     {
-        switch ( expression.cat )
+        if ( auto* id = std::get_if< ast::var >( &e.data ) )
         {
-            case ast::expr::num_lit:
-            case ast::expr::bool_lit:
-                return;
+            auto sid = lookup( curr_scope, id->name );
+            if ( !sid )
+                error( e.loc, "undeclared identified '", id->name, "'" );
 
-            case ast::expr::identifier:
-            {
-                const auto binding = lookup( current, expression.id );
-                if ( !binding )
-                    error( expression.src_loc, "unknown identifier: ", expression.id );
-                if ( !result.bindings.at( binding->value ).initialized )
-                    error( expression.src_loc, "use of uninitialized binding: ", expression.id );
-                result.identifier_bindings.emplace( &expression, *binding );
-                return;
-            }
+            result.identifier_bindings[ &e ] = get_symbol( sid.value() ).binding.value();
+        }
+        else if ( auto* u = std::get_if< ast::unary >( &e.data ) )
+        {
+            resolve_expr( *u->sub, curr_scope );
+        }
+        else if ( auto* b = std::get_if< ast::binary >( &e.data ) )
+        {
+            resolve_expr( *b->left, curr_scope );
+            resolve_expr( *b->right, curr_scope );
+        }
+        else if ( auto* a = std::get_if< ast::assign >( &e.data ) )
+        {
+            resolve_expr( *a->value, curr_scope );
+            auto sid = lookup( curr_scope, a->target.name );
+            if ( !sid )
+                error( e.loc, "unknown identifier '", a->target.name, "'" );
+            
+            auto& sym = get_symbol( sid.value() );
+            if ( sym.kind != symbol::kind_t::variable )
+                error( e.loc, "invalid target of an assignment" );
+            
+            result.assign_bindings[ &e ] = sym.binding.value();
 
-            case ast::expr::assign:
-            {
-                if ( expression.subs.size() != 2 || expression.subs[ 0 ].cat != ast::expr::identifier )
-                    error( expression.src_loc, "assignment target must be an identifier in the current subset" );
-                const auto binding = lookup( current, expression.subs[ 0 ].id );
-                if ( !binding )
-                    error( expression.subs[ 0 ].src_loc, "unknown identifier: ", expression.subs[ 0 ].id );
-                if ( result.bindings.at( binding->value ).declaration_kind == ast::var_decl::mod_t::con )
-                    error( expression.src_loc, "assignment to const binding: ", expression.subs[ 0 ].id );
-                result.assignment_targets.emplace( &expression, *binding );
-                resolve_expression( expression.subs[ 1 ], current );
-                result.bindings.at( binding->value ).initialized = true;
-                return;
-            }
+            auto& bi = get_binding( sym.binding.value() );
+            if ( bi.kind == ast::var_declaration::kind_t::constant )
+                error( e.loc, "can't assign to a const-qualified variable" );
+        }
+        else if ( auto* c = std::get_if< ast::call >( &e.data ) )
+        {
+            ast::expr* callee_ptr = c->callee.get();
+            if ( !std::holds_alternative< ast::var >( callee_ptr->data ) )
+                error( e.loc, "expected an identifier" );
 
-            case ast::expr::call:
-            {
-                if ( expression.subs.empty() || expression.subs[ 0 ].cat != ast::expr::identifier )
-                    error( expression.src_loc, "only direct named calls are supported" );
-                const auto name = intern( expression.subs[ 0 ].id );
-                const auto function = global_functions.find( name );
-                if ( function == global_functions.end() )
-                    error( expression.src_loc, "unknown function: ", expression.subs[ 0 ].id );
-                const auto& signature = result.functions.at( function->second.value );
-                if ( expression.subs.size() - 1 != signature.arity )
-                    error( expression.src_loc, "wrong number of arguments to ", expression.subs[ 0 ].id );
-                result.direct_calls.emplace( &expression, function->second );
-                for ( size_t i = 1; i < expression.subs.size(); ++i )
-                    resolve_expression( expression.subs[ i ], current );
-                return;
-            }
-
-            default:
-                for ( const auto& operand : expression.subs )
-                    resolve_expression( operand, current );
-                return;
+            auto& calle_name = std::get< ast::var >( callee_ptr->data );
+            auto sid = lookup( curr_scope, calle_name.name );
+            if ( !sid )
+                error( e.loc, "undecared identifier" );
+            
+            auto& sym = get_symbol( sid.value() );
+            if ( sym.kind != symbol::kind_t::function )
+                error( e.loc, "expected a function" );
+            
+            resolve_expr( *c->callee, curr_scope );
+            
+            function_id fid = sym.function.value();
+            result.direct_calls[ &e ] = fid;
+            auto& f = get_function( fid );
+            
+            // TODO: javascript allows calling functions with less arguments than described by the function signature,
+            // we will have to work out way through it 
+            if ( c->args.size() != f.arity )
+                error( e.loc, "call arity doesn't match" );
+            
+            for ( auto& arg : c->args )
+                resolve_expr( *arg, curr_scope );
         }
     }
 
-    void resolve_statement( const ast::stmt& statement, scope_id parent_scope )
+    void resolve_block( ast::block& b, scope_id block_scope )
     {
-        const auto current = result.statement_scopes.at( &statement );
-        switch ( statement.cat )
+        for ( auto& sub : b.stmts )
+            resolve_stmt( *sub, block_scope );
+    }
+
+    void resolve_stmt( ast::stmt& s, scope_id curr_scope )
+    {
+        if ( auto* b = std::get_if< ast::block >( &s.data ) )
         {
-            case ast::stmt::var_dclr:
+            scope_id& block_scope = result.stmt_scopes.at( &s );
+            resolve_block( *b, block_scope );
+        }
+        else if ( auto* vd = std::get_if< ast::var_declaration >( &s.data ) )
+        {
+            for ( auto& decl : vd->declarators )
             {
-                const auto binding = result.declarations.at( &statement.vdecl );
-                if ( statement.vdecl.modifier == ast::var_decl::mod_t::con && !statement.vdecl.e )
-                    error( statement.src_loc, "const declaration requires an initializer" );
-                if ( statement.vdecl.e )
-                    resolve_expression( *statement.vdecl.e, parent_scope );
-                result.bindings.at( binding.value ).initialized = statement.vdecl.e.has_value();
-                return;
+                auto sid = lookup( curr_scope, decl.name );
+                assert( sid );
+
+                auto& sym = get_symbol( sid.value() );
+                auto& bi = get_binding( sym.binding.value() );
+                if ( bi.kind == ast::var_declaration::kind_t::constant && !decl.init )
+                    error( s.loc, "const declaration requires an initializer" );
+
+                if ( decl.init.has_value() )
+                {
+                    resolve_expr( *decl.init, curr_scope );
+                    bi.initialized = true;
+                    get_binding( *sym.binding ).initialized = true;
+                }
             }
-
-            case ast::stmt::ret:
-                if ( !in_function( parent_scope ) )
-                    error( statement.src_loc, "return used outside a function" );
-                if ( statement.e ) resolve_expression( *statement.e, parent_scope );
-                return;
-
-            case ast::stmt::brk:
-            case ast::stmt::cont:
-                if ( !in_loop( parent_scope ) )
-                    error( statement.src_loc, statement.cat == ast::stmt::brk ? "break" : "continue", " used outside a loop" );
-                return;
-
-            default:
-                if ( statement.e ) resolve_expression( *statement.e, parent_scope );
-                for ( const auto& substatement : statement.subs )
-                    resolve_statement( substatement, current );
-                return;
+        }
+        else if ( auto* fd = std::get_if< ast::fn_declaration >( &s.data ) )
+        {
+            scope_id& fn_scope = result.stmt_scopes.at( &s );
+            resolve_block( fd->body, fn_scope );
+        }
+        else if ( auto* r = std::get_if< ast::ret >( &s.data ) )
+        {
+            if ( !get_scope( curr_scope ).enclosing_function )
+                error( s.loc, "return statemnt outside of a function" );
+            if ( r->value )
+                resolve_expr( *r->value, curr_scope );
+        }
+        else if ( auto* i = std::get_if< ast::if_stmt >( &s.data ) )
+        {
+            resolve_expr( i->cond, curr_scope );
+            resolve_stmt( *i->then_branch, curr_scope );
+            if ( i->else_branch )
+                resolve_stmt( *i->else_branch, curr_scope );
+        }
+        else if ( auto* fl = std::get_if< ast::for_stmt >( &s.data ) )
+        {
+            scope_id& loop_scope = result.stmt_scopes.at( &s );
+            if ( fl->init )
+                resolve_stmt( *fl->init, loop_scope );
+            if ( fl->cond )
+                resolve_expr( *fl->cond, loop_scope );
+            if ( fl->update )
+                resolve_expr( *fl->update, loop_scope );
+            resolve_stmt( *fl->body, loop_scope );
+        }
+        else if ( auto* w = std::get_if< ast::while_stmt >( &s.data ) )
+        {
+            scope_id& loop_scope = result.stmt_scopes.at( &s );
+            resolve_expr( w->cond, loop_scope );
+            resolve_stmt( *w->body, loop_scope );
+        }
+        else if ( auto* dw = std::get_if< ast::do_while_stmt >( &s.data ) )
+        {
+            scope_id& loop_scope = result.stmt_scopes.at( &s );
+            resolve_expr( dw->cond, loop_scope );
+            resolve_stmt( *dw->body, loop_scope );
+        }
+        else if ( auto* e = std::get_if< ast::expr_stmt >( &s.data ) )
+        {
+            resolve_expr( e->value, curr_scope );
+        }
+        else if ( std::get_if< ast::brk >( &s.data ) )
+        {
+            if ( !is_in_loop( curr_scope ) )
+                error( s.loc, "'break' statement not within a loop" );
+        }
+        else if ( std::get_if< ast::cont >( &s.data ) )
+        {
+            if ( !is_in_loop( curr_scope ) )
+                error( s.loc, "'continue' statement not within a statemnt" );
         }
     }
 
-    void declare_functions( const ast::program& program, scope_id global )
+    analysis_result run( ast::program& ast )
     {
-        for ( const auto& item : program.toplevel_items )
-        {
-            const auto* declaration = std::get_if< ast::fn_decl >( &item );
-            if ( !declaration ) continue;
+        scope_id global = declare_scope( scope::kind::global, {} );
+        function_id gfid{ .value = static_cast< uint32_t >( result.functions.size() ) };
+        function f{  .id = gfid,
+                        .scope = global,
+                        .arity = 0 };
+        
+        result.functions.push_back( f );
+        result.global_function = gfid;
 
-            const auto name = intern( declaration->name );
-            if ( global_functions.contains( name ) )
-                error( declaration->src_loc, "redeclaration of function: ", declaration->name );
-            function_id id{ static_cast< uint32_t >( result.functions.size() ) };
-            const auto function_scope = add_scope( scope::kind::function, global );
-            result.functions.push_back( function{ id, name, declaration, function_scope, declaration->params.size() } );
-            result.function_declarations.emplace( declaration, id );
-            global_functions.emplace( name, id );
-        }
-    }
+        for ( auto& stmt : ast.statements )
+            declare_stmt( *stmt, global );
 
-    void build_function_scopes( const function& function )
-    {
-        for ( const auto& parameter : function.declaration->params )
-            declare( parameter, function.scope, true );
-        for ( const auto& statement : function.declaration->body )
-            build_statement( statement, function.scope );
-    }
-
-    analysis_result run( const ast::program& program )
-    {
-        const auto global = add_scope( scope::kind::global, {} );
-        declare_functions( program, global );
-
-        for ( const auto& function : result.functions )
-            build_function_scopes( function );
-        for ( const auto& function : result.functions )
-            for ( const auto& statement : function.declaration->body )
-                resolve_statement( statement, function.scope );
-
-        for ( const auto& item : program.toplevel_items )
-            if ( const auto* statement = std::get_if< ast::stmt >( &item ) )
-            {
-                build_statement( *statement, global );
-                resolve_statement( *statement, global );
-            }
-
-        return std::move( result );
+        for ( auto& stmt : ast.statements )
+            resolve_stmt( *stmt, global );
+        
+        return result;
     }
 };
 

@@ -29,9 +29,12 @@ struct compiler
 
         sema::analyzer analyzer;
         auto semantics = analyzer.run( ast );
-        hir::program hir_prog = hir::lower2hir( ast, semantics );
+
+        hir::lowering low{ semantics };
+
+        hir::module hir = low.lower_program( ast );
         if ( conf.emit_hir )
-            printer.print_hir( std::cout, hir_prog, semantics );
+            printer.print_hir( std::cout, hir, semantics );
     }
 };
 
