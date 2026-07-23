@@ -16,102 +16,158 @@ namespace qthu::jsc::ast
 
 struct expr;
 struct stmt;
-struct fn_decl;
-struct var_decl;
+
+using expr_ptr = std::unique_ptr< expr >;
+using stmt_ptr = std::unique_ptr< stmt >;
+
+struct int_lit    
+{
+    std::uint64_t value; 
+};
+
+struct bool_lit   
+{
+    bool value;
+};
+
+struct var        
+{
+    std::string_view name;
+};
+
+struct unary
+{
+    op_kind op;
+    expr_ptr sub; 
+};
+
+struct binary
+{
+    op_kind op;
+    expr_ptr left;
+    expr_ptr right;
+};
+
+struct assign
+{
+    var target;
+    expr_ptr value;
+};
+
+struct call
+{
+    expr_ptr callee; 
+    std::vector< expr_ptr > args;
+};
 
 struct expr
 {
-    enum cat_t 
-    {
-        num_lit,
+    location loc;
+
+    std::variant<
+        int_lit,
         bool_lit,
-        identifier,
+        var,
         unary,
         binary,
-        relational,
         assign,
-        call,
-    } cat;
-
-    enum val_kind_t
-    {
-        lvalue,
-        rvalue,
-    } val_kind;
-
-    location src_loc;
-    std::variant< std::monostate, uint64_t, bool > val;
-    std::string_view id;
-    std::vector< expr > subs{};
-    jsc::op_kind op;
-    
-    expr& operator[]( int n )
-    {
-        assert( n < subs.size() );
-        return subs[ n ];
-    }
-
-    const expr& operator[]( int n ) const
-    {
-        assert( n < subs.size() );
-        return subs[ n ];
-    }
+        call
+    > data;
 };
 
-struct var_decl 
+struct param 
 {
-    enum mod_t { let, var, con } modifier;
     std::string_view name;
-    std::optional< expr > e;
 };
 
-struct stmt
+struct var_declarator 
 {
-    enum cat_t 
-    {
+    std::string_view name;
+    std::optional< expr > init;
+};
+
+struct var_declaration 
+{
+    enum class kind_t { let, constant, var } kind;
+    std::vector< var_declarator > declarators;
+};
+
+struct block 
+{
+    std::vector< stmt_ptr > stmts;
+};
+
+struct fn_declaration
+{
+    std::string_view name;
+    std::vector< param > params;
+    block body;
+};
+
+struct ret 
+{
+    std::optional< expr > value;
+};
+
+struct if_stmt
+{
+    expr cond;
+    stmt_ptr then_branch;
+    stmt_ptr else_branch;
+};
+
+struct do_while_stmt
+{
+    expr cond;
+    stmt_ptr body;
+};
+
+struct while_stmt 
+{
+    expr cond;
+    stmt_ptr body;
+};
+
+struct for_stmt
+{
+    stmt_ptr init;
+    expr_ptr cond;
+    expr_ptr update;
+    stmt_ptr body;
+};
+
+struct expr_stmt 
+{
+    expr value;
+};
+
+struct brk{};
+
+struct cont{};
+
+struct stmt 
+{
+    location loc;
+
+    std::variant<
+        block,
+        var_declaration,
+        var_declarator,
+        fn_declaration,
         ret,
         if_stmt,
-        for_stmt,
-        while_stmt,
         do_while_stmt,
-        cont,
-        brk,
-        block,
-        var_dclr,
+        while_stmt,
+        for_stmt,
         expr_stmt,
-    } cat;
-
-    location src_loc;
-    std::vector< stmt > subs{};
-    std::optional< expr > e;
-    var_decl vdecl;
-
-    stmt& operator[]( int n )
-    {
-        assert( n < subs.size() );
-        return subs[ n ];
-    }
-
-    const stmt& operator[]( int n ) const
-    {
-        assert( n < subs.size() );
-        return subs[ n ];
-    }
+        brk,
+        cont
+    > data;
 };
-
-struct fn_decl
-{
-    location src_loc;
-    std::string_view name;
-    std::vector< stmt > body;
-    std::vector< var_decl > params;
-};
-
-using toplevel = std::variant< fn_decl, stmt >;
 
 struct program 
 {
-    std::vector< toplevel > toplevel_items;
+    std::vector< stmt_ptr > statements;
 };
 
-} // namespace dungeon
+}

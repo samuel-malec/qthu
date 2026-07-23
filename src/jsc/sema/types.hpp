@@ -42,4 +42,11 @@ enum class type
     jsvalue
 };
 
+inline std::ostream& operator<<( std::ostream& os, const type typ )
+{
+    if ( typ == type::jsvalue )
+        os << "jsvalue";
+    return os;
+}
+
 }

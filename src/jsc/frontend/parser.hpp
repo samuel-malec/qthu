@@ -10,6 +10,7 @@
 #include "ast.hpp"
 #include "lexer.hpp"
 
+// TODO: maybe think whether we should take V8's frontend
 namespace qthu::jsc
 {
 
@@ -19,9 +20,7 @@ struct parser : token_sink
     using op_kind = jsc::op_kind;
     using expr = ast::expr;
     using stmt = ast::stmt;
-    using toplevel = ast::toplevel;
-    using fn_decl = ast::fn_decl;
-    using var_decl = ast::var_decl;
+    using fn_declaration = ast::fn_declaration;
     using program = ast::program;
 
     token current;
@@ -135,21 +134,44 @@ struct parser : token_sink
             if ( peek().cat == cat::invalid )
                 break;
 
-            std::optional< toplevel > d = parse_toplevel();
-            if ( !d )
-                error( "Expected a toplevel declaration " );
+            std::optional< ast::stmt > s = parse_stmt();
+            if ( !s )
+                error( "Parse error " );
 
-            prog.toplevel_items.push_back( d.value() );
+            prog.statements.push_back( std::make_unique< stmt >( std::move( s.value() ) ) );
         }
 
         return prog;
     }
 
-    expr make_expr_node( expr::cat_t cat );
+    ast::expr_ptr make_expr_ptr( ast::expr e )
+    {
+        return std::make_unique< ast::expr >( std::move( e ) );
+    }
+
+    ast::stmt_ptr make_stmt_ptr( ast::stmt s )
+    {
+        return std::make_unique< ast::stmt >( std::move( s ) );
+    }
+
+    ast::expr make_binary( ast::expr lhs, jsc::op_kind op, ast::expr rhs )
+    {
+        location loc = lhs.loc;
+        return ast::expr{
+            .loc = loc,
+            .data = ast::binary{
+                .op = op,
+                .left = make_expr_ptr( std::move( lhs ) ),
+                .right = make_expr_ptr( std::move( rhs ) ),
+            }
+        };
+    }
 
     expr make_increment_expr( expr target, bool is_incr );
 
     expr make_compound_assign( expr lhs, std::string_view compound_op, expr rhs );
+
+    std::vector< ast::param > parse_param_list();
 
     std::optional< expr > parse_primary();
 
@@ -175,6 +197,8 @@ struct parser : token_sink
 
     std::optional< expr > parse_expr();
 
+    std::optional< stmt > parse_fn_decl_stmt();
+
     std::optional< stmt > parse_block();
 
     std::optional< stmt > parse_if();
@@ -193,17 +217,13 @@ struct parser : token_sink
 
     std::optional< stmt > parse_loop_stmt();
 
-    std::vector< var_decl > parse_var_decl_list();
-
-    std::optional< var_decl > parse_var_decl_info();
-
+    std::optional< ast::var_declarator > parse_var_declarator();
+    
     std::optional< stmt > parse_var_decl();
 
     std::optional< stmt > parse_stmt();
 
-    std::optional< fn_decl > parse_fn_decl();
-
-    std::optional< toplevel > parse_toplevel();
+    std::optional< fn_declaration > parse_fn_decl();
 };
 
 }
