@@ -166,6 +166,151 @@ void pretty_printer::print_ast( std::ostream& out, ast::program& ast )
         print_ast_stmt( out, *s, 1 );
 }
 
+void pretty_printer::print_lin_value( std::ostream& out, const lin::value& v )
+{
+    out << "%" << v.id.value;
+
+    if ( v.version != 0 )
+        out << "." << v.version;
+}
+
+void pretty_printer::print_lin_constant( std::ostream& out, const lin::constant& c )
+{
+    if ( auto* i = std::get_if< uint64_t >( &c ) )
+        out << *i;
+    else if ( auto* b = std::get_if< bool >( &c ) )
+        out << ( *b ? "true" : "false" );
+}
+
+void pretty_printer::print_lin_argument( std::ostream& out, const lin::argument& arg )
+{
+    if ( auto* c = std::get_if< lin::constant >( &arg ) )
+        print_lin_constant( out, *c );
+    else if ( auto* v = std::get_if< lin::value >( &arg ) )
+        print_lin_value( out, *v );
+}
+
+void pretty_printer::print_lin_instr( std::ostream& out, const lin::instr& i, int depth )
+{
+    pad( out, depth );
+
+    if ( auto* u = std::get_if< lin::unary_data >( &i.data ) )
+    {
+        out << "[ unary ] ";
+        print_lin_value( out, u->target );
+        out << " = ";
+
+        out << u->op << " ";
+        print_lin_argument( out, u->arg1 );
+        out << '\n';
+    }
+    else if ( auto* b = std::get_if< lin::binary_data >( &i.data ) )
+    {
+        out << "[ binary ] ";
+        print_lin_value( out, b->target );
+        out << " = ";
+
+        print_lin_argument( out, b->arg1 );
+        out << " " << b->op << " ";
+        print_lin_argument( out, b->arg2 );
+
+        out << '\n';
+    }
+    else if ( auto* c = std::get_if< lin::copy_data >( &i.data ) )
+    {
+        out << "[ copy ] ";
+        print_lin_value( out, c->target );
+        out << " = ";
+        print_lin_argument( out, c->arg1 );
+        out << '\n';
+    }
+    else if ( auto* c = std::get_if< lin::call_data >( &i.data ) )
+    {
+        out << "[ call ] ";
+        print_lin_value( out, c->target );
+        out << " = fn#" << c->callee.value << "( ";
+
+        for ( size_t idx = 0; idx < c->args.size(); idx++ )
+        {
+            print_lin_argument( out, c->args[ idx ] );
+
+            if ( idx + 1 != c->args.size() )
+                out << ", ";
+        }
+
+        out << " )\n";
+    }
+    else if ( auto* r = std::get_if< lin::ret_data >( &i.data ) )
+    {
+        out << "[ return ] ";
+
+        if ( r->arg )
+            print_lin_argument( out, *r->arg );
+
+        out << '\n';
+    }
+    else if ( auto* id = std::get_if< lin::if_data >( &i.data ) )
+    {
+        out << "[ if ]\n";
+
+        pad( out, depth + 1 );
+        out << "[ condition ] ";
+        print_lin_argument( out, id->cond );
+        out << '\n';
+
+        pad( out, depth + 1 );
+        out << "[ then ]\n";
+
+        for ( auto& instr : id->then_body )
+            print_lin_instr( out, instr, depth + 2 );
+
+        pad( out, depth + 1 );
+        out << "[ else ]\n";
+
+        for ( auto& instr : id->else_body )
+            print_lin_instr( out, instr, depth + 2 );
+
+        if ( id->result )
+        {
+            pad( out, depth + 1 );
+            out << "[ result ] ";
+            print_lin_value( out, *id->result );
+            out << '\n';
+        }
+    }
+    else if ( auto* l = std::get_if< lin::loop_data >( &i.data ) )
+    {
+        out << "[ loop ]\n";
+
+        for ( auto& instr : l->body )
+            print_lin_instr( out, instr, depth + 1 );
+    }
+    else if ( std::get_if< lin::brk_data >( &i.data ) )
+    {
+        out << "[ break ]\n";
+    }
+    else if ( std::get_if< lin::cont_data >( &i.data ) )
+    {
+        out << "[ continue ]\n";
+    }
+}
+
+void pretty_printer::print_lin_function( std::ostream& out, const lin::function& fn )
+{
+    out << "[ function ] #" << fn.name.value << "\n";
+
+    for ( auto& instr : fn.body )
+        print_lin_instr( out, instr, 1 );
+}
+
+void pretty_printer::print_lin_program( std::ostream& out, const lin::program& p )
+{
+    out << "[ program ]\n";
+
+    for ( auto& fn : p.functions )
+        print_lin_function( out, fn );
+}
+
 template< typename... Ts >
 struct overloaded : Ts... { using Ts::operator()...; };
 template< typename... Ts >

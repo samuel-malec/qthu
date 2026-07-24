@@ -15,21 +15,23 @@ struct config
     bool emit_ast;
     bool emit_hir;
     bool emit_cthu;
+    bool emit_lin;
 };
 
 inline void help()
 {
     std::cout << "Usage:\n"
-              << "./jscc file.js [-o out.ct]\n"
+              << "./jsc file.js [-o out.ct]\n"
               << "-A (print ast)\n"
               << "-H (print hir)\n"
+              << "-L (print linear ir)\n"
               << "-C (print cthulhu)\n"; 
 }
 
 inline config parse_config( int argc, char* const* argv )
 {
     if ( argc < 1 )
-        throw std::runtime_error( "Usage: ./compiler-dungeon file.js [-o out.ct]\n" );
+        throw std::runtime_error( "Usage: ./jsc file.js [-o out.ct]\n" );
     
     if ( strcmp( argv[ 0 ], "-h" ) == 0 )
     {
@@ -42,6 +44,7 @@ inline config parse_config( int argc, char* const* argv )
     bool _emit_ast = false;
     bool _emit_cthu = false;
     bool _emit_hir = false;
+    bool _emit_lin = false;
     
     for ( int i = 1; i < argc; ++i )
     {
@@ -63,6 +66,11 @@ inline config parse_config( int argc, char* const* argv )
             _emit_hir = true;
             continue;
         }
+        else if ( strcmp( argv[ i ], "-L" ) == 0 )
+        {
+            _emit_lin = true;
+            continue;
+        }
         else if ( strcmp( argv[ i ], "-C" ) == 0 )
         {
             _emit_cthu = true;
@@ -78,6 +86,7 @@ inline config parse_config( int argc, char* const* argv )
             .emit_ast = _emit_ast,
             .emit_hir = _emit_hir,
             .emit_cthu = _emit_cthu,
+            .emit_lin = _emit_lin
         };
 }
 

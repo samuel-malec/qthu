@@ -8,6 +8,7 @@
 #include "../frontend/ast.hpp"
 #include "../../cthu_core/types.hpp"
 #include "../ir/hir.hpp"
+#include "../ir/linear.hpp"
 #include "../sema/analysis.hpp"
 
 namespace qthu::jsc::print
@@ -24,6 +25,18 @@ struct pretty_printer
     void print_ast_stmt( std::ostream& out, ast::stmt& s, int depth );
 
     void print_ast( std::ostream& out, ast::program& ast );
+    
+    void print_lin_value( std::ostream& out, const lin::value& v );
+
+    void print_lin_constant( std::ostream& out, const lin::constant& c );
+
+    void print_lin_argument( std::ostream& out, const lin::argument& arg );
+
+    void print_lin_instr( std::ostream& out, const lin::instr& i, int depth );
+
+    void print_lin_function( std::ostream& out, const lin::function& fn );
+
+    void print_lin_program( std::ostream& out, const lin::program& p );
 
     void print_hir_expr( std::ostream& out, hir::function& fn, hir::expr_id e, int depth );
 

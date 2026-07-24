@@ -7,6 +7,7 @@
 #include "../frontend/parser.hpp"
 #include "../ir/hir.hpp"
 #include "../lower/ast2hir.hpp"
+#include "../lower/hir2linear.hpp"
 #include "../sema/analysis.hpp"
 
 namespace qthu::jsc
@@ -30,11 +31,14 @@ struct compiler
         sema::analyzer analyzer;
         auto semantics = analyzer.run( ast );
 
-        hir::lowering low{ semantics };
-
-        hir::module hir = low.lower_program( ast );
+        hir::ast_lowerer alow{ semantics };
+        hir::module hir = alow.lower_ast( ast );
         if ( conf.emit_hir )
             printer.print_hir( std::cout, hir, semantics );
+
+        lin::program prog = lower_hir( hir, semantics );
+        if ( conf.emit_lin )
+            printer.print_lin_program( std::cout, prog );
     }
 };
 
