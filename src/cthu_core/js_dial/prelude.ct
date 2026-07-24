@@ -34,6 +34,22 @@ signature simple[ T, S, B ] : affine[ T, S, B ]
     dup ∷ T → T × T
 )
 
+signature arithmetic[ T, S, B ] : simple[ T, S, B ]
+(
+    add ∷ T × T → T
+    sub ∷ T × T → T
+    mul ∷ T × T → T
+    div ∷ T × T → T
+    
+    eq? ∷ T × T → B
+    lt? ∷ T × T → B
+    le? ∷ T × T → B
+    gt? ∷ T × T → B
+    ge? ∷ T × T → B
+
+    cons ∷ ∅ → T ; we should be able to create cons instructions on demand
+)
+
 signature tagged[ T, B ]
 (
     tag_of ∷ T → tag
