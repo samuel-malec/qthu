@@ -1,0 +1,17 @@
+structure main
+(
+    run = λ
+    (
+        jsvalue cons_3 → v0
+        jsvalue cons_5 → v1
+        jsvalue cons_2 → v2
+        jsvalue mul v1 v2 → v3
+        jsvalue add v0 v3 → v4
+        jsvalue drop v4
+        jsvalue cons_3 → v5
+        jsvalue cons_2 → v6
+        jsvalue lt? v5 v6 → v7
+        jsvalue not v7 → v8
+        jsvalue drop v8
+    )
+)
