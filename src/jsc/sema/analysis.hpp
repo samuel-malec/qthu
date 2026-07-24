@@ -16,7 +16,6 @@
 namespace qthu::jsc::sema
 {
 
-// TODO: record every free variable referenced by nested functions
 template< typename... Args >
 inline void error( Args&&... args )
 {
@@ -37,7 +36,6 @@ inline void error( const location& where, Args&&... args )
 struct name_id
 {
     uint32_t value;
-
     auto operator<=>( const name_id& ) const = default;
 };
 
@@ -64,7 +62,6 @@ struct scope_id
 struct symbol
 {
     symbol_id id;
-    
     enum class kind_t
     {
         variable,
@@ -280,15 +277,12 @@ struct analyzer
             declare_stmt( *stmt, curr_scope );
     }
 
-    // TODO: think about what happens when we have an empty statement, can it happen ? -> investigate also in dungeon
     void declare_stmt( ast::stmt& s, scope_id curr_scope )
     {
         if ( auto* b = std::get_if< ast::block >( &s.data ) )
         {
             scope_id new_scope = declare_scope( scope::kind::block, curr_scope );
-            get_scope( new_scope ).enclosing_function =
-                get_scope( curr_scope ).enclosing_function;
-
+            get_scope( new_scope ).enclosing_function = get_scope( curr_scope ).enclosing_function;
             result.stmt_scopes[ &s ] = new_scope;
             declare_block( *b, new_scope );
         }
@@ -352,7 +346,7 @@ struct analyzer
             auto sid = lookup( curr_scope, id->name );
             if ( !sid )
                 error( e.loc, "undeclared identified '", id->name, "'" );
-
+            
             result.identifier_bindings[ &e ] = get_symbol( sid.value() ).binding.value();
         }
         else if ( auto* u = std::get_if< ast::unary >( &e.data ) )
@@ -395,8 +389,6 @@ struct analyzer
             auto& sym = get_symbol( sid.value() );
             if ( sym.kind != symbol::kind_t::function )
                 error( e.loc, "expected a function" );
-            
-            resolve_expr( *c->callee, curr_scope );
             
             function_id fid = sym.function.value();
             result.direct_calls[ &e ] = fid;
