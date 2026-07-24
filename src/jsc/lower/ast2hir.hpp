@@ -1,24 +1,19 @@
 #pragma once
 
+#include "../../common/error.hpp"
 #include "../ir/hir.hpp"
 #include "../sema/analysis.hpp"
 
 namespace qthu::jsc::hir
 {
 
-// TODO: captures
-template< typename... Args >
-inline void error( Args&&... args )
-{
-    std::ostringstream out;
-    ( out << ... << std::forward< Args >( args ) );
-    throw std::runtime_error( out.str() );
-}
 
-struct lowering
+
+struct ast_lowerer
 {
     sema::analysis_result& sema;
 
+    // TODO: fill in captures in functions...
     struct func_ctx
     {
         function fn;
@@ -236,7 +231,7 @@ struct lowering
         mod.functions.push_back( std::move( fc.fn ) );
     }
 
-    hir::module lower_program( ast::program& ast )
+    hir::module lower_ast( ast::program& ast )
     {
         hir::module mod{};
         func_ctx fc{};
