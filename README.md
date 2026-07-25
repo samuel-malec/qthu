@@ -4,14 +4,14 @@ It is designed to be suitable for program transformation, testing, and verificat
 This repository implements the compiler toolchain for the JavaScript dialect of Cthulhu.
 
 Currently, two compilers are being implemented:
-- **jsc** - compiles Javascript into Cthulhu
+- **js2ct** - compiles Javascript into Cthulhu
 - **cthuc** - lowers Cthulhu into QuickJS bytecode
 
 ```text
 JavaScript
      │
      ▼
-    jsc
+    js2ct
      │
      ▼
 Cthulhu IR
@@ -31,8 +31,7 @@ src/
 ├── common/      # Shared utilities and infrastructure
 ├── cthuc/       # Cthulhu → QuickJS compiler
 ├── cthu_core/   # Core definitions for the Cthulhu JavaScript dialect
-├── jsc/         # JavaScript → Cthulhu compiler
-└── toy/         # Deprecated experimental compiler
+├── js2ct/       # JavaScript → Cthulhu compiler
 ```
 
 > **Status:** Active development. Both compilers are currently under implementation.

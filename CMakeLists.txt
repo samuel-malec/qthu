@@ -32,21 +32,6 @@ target_link_libraries(bcrun
     quickjs-libc
 )
 
-# compiler from a toy language to qjs bytecode
-add_executable(toy)
-target_sources(toy
-    PRIVATE
-    src/toy/toy.cpp
-    src/asm/asm.cpp
-    src/asm/instruction.cpp
-    src/asm/directive.cpp
-)
-
-target_link_libraries(toy
-    PRIVATE
-    quickjs-libc
-)
-
 # compiler from cthu to qjs bytecode
 add_executable(cthuc)
 target_sources(cthuc
@@ -71,12 +56,12 @@ target_link_libraries(cthuc
 )
 
 # compiler from javascript to cthu
-add_executable(jsc)
+add_executable(js2ct)
 
-target_sources(jsc
+target_sources(js2ct
     PRIVATE
-    src/jsc/main.cpp
-    src/jsc/frontend/lexer.cpp
-    src/jsc/frontend/parser.cpp
-    src/jsc/printer/pretty_printer.cpp
+    src/js2ct/main.cpp
+    src/js2ct/frontend/lexer.cpp
+    src/js2ct/frontend/parser.cpp
+    src/js2ct/printer/pretty_printer.cpp
 )
