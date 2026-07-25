@@ -35,7 +35,7 @@ struct compiler
     void run( config& conf )
     {
         cthuc::symtab st;
-        auto input = fs::path( conf.in_name );
+        auto input = fs::path( conf.in_path );
         auto prelude = fs::path( conf.path_to_cthu ) / "prelude.ct";
         auto builtins = fs::path( conf.path_to_cthu ) / "builtins.ct";
 
@@ -48,8 +48,8 @@ struct compiler
         as::asmbuilder builder{};
         cthuc::codegen cg{ prog, builder };
         bc::program bc_prog = cg.lower_to_bc();
-        bc_prog.write_binary( conf.out_name );
-        std::cout << "qjs bytecode written to: " << conf.out_name << "\n";
+        bc_prog.write_binary( conf.out_path );
+        std::cout << "qjs bytecode written to: " << conf.out_path << "\n";
     }
 };
 

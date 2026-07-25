@@ -48,6 +48,7 @@ namespace qthu::cthuc
         builder.add_label( end_label );
     }
 
+    // todo: we should probably have a precomputed map for these builtins...
     void codegen::emit_builtin( const lowered_insn& insn, uint32_t uid )
     {
         auto get1 = [ & ]( const lowered_insn& insn )
@@ -75,7 +76,7 @@ namespace qthu::cthuc
         };
         
         auto name = ir.st.name_of( insn.resolved.target );
-        if ( name == "qjs_int_dup" || name == "qjs_bool_dup" )
+        if ( name == "qjs_val_dup" || name == "qjs_val_dup" )
         {
             get1( insn );
             builder.add_instr( qthu::as::dup_() );
@@ -84,31 +85,31 @@ namespace qthu::cthuc
             return;
         }
 
-        if ( name == "qjs_int_drop" )
+        if ( name == "qjs_val_drop" )
             return;
 
-        if ( name == "qjs_int_move" )
+        if ( name == "qjs_val_move" )
         {
             get1( insn );
             builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
             return;
         }
 
-        if ( name == "qjs_int_push" )
+        if ( name == "qjs_val_push" )
         {
             std::cout << name << '\n';
             std::cout << "not implemented\n";
             return;
         }
 
-        if ( name == "qjs_int_pop" )
+        if ( name == "qjs_val_pop" )
         {
             std::cout << name << '\n';
             std::cout << "not implemented\n";
             return;
         }
 
-        if ( name == "qjs_int_join" )
+        if ( name == "qjs_val_join" )
         {
             auto else_label = make_label();
             auto endif_label = make_label();
@@ -127,73 +128,73 @@ namespace qthu::cthuc
             return;
         }
 
-        if ( name == "qjs_int_add" )
+        if ( name == "qjs_val_add" )
         {
             binary_insn( insn, qthu::as::add_() );
             return;
         }
 
-        if ( name == "qjs_int_sub" )
+        if ( name == "qjs_val_sub" )
         {
             binary_insn( insn, qthu::as::sub_() );
             return;
         }
 
-        if ( name == "qjs_int_mul" )
+        if ( name == "qjs_val_mul" )
         {
             binary_insn( insn, qthu::as::mul_() );
             return;
         }
 
-        if ( name == "qjs_int_div" )
+        if ( name == "qjs_val_div" )
         {
             binary_insn( insn, qthu::as::div_() );
             return;
         }
 
-        if ( name == "qjs_int_rem" )
+        if ( name == "qjs_val_rem" )
         {
             binary_insn( insn, qthu::as::mod_() );
             return;
         }
 
-        if ( name == "qjs_int_eq" )
+        if ( name == "qjs_val_eq" )
         {
             binary_insn( insn, qthu::as::eq_() );
             return;
         }
 
-        if ( name == "qjs_int_ne" )
+        if ( name == "qjs_val_ne" )
         {
             binary_insn( insn, qthu::as::neq_() );
             return;
         }
 
-        if ( name == "qjs_int_lt" )
+        if ( name == "qjs_val_lt" )
         {
             binary_insn( insn, qthu::as::lt_() );
             return;
         }
 
-        if ( name == "qjs_int_le" )
+        if ( name == "qjs_val_le" )
         {
             binary_insn( insn, qthu::as::lte_() );
             return;
         }
 
-        if ( name == "qjs_int_ge" )
+        if ( name == "qjs_val_ge" )
         {
             binary_insn( insn, qthu::as::gte_() );
             return;
         }
 
-        if ( name == "qjs_int_gt" )
+        if ( name == "qjs_val_gt" )
         {
             binary_insn( insn, qthu::as::gt_() );
             return;
         }
 
-        if ( name == "qjs_int_ashl" )
+        if ( name == "qjs_val_ashl" )
         {
             get1( insn );
             builder.add_instr( qthu::as::shl_() );
@@ -201,7 +202,7 @@ namespace qthu::cthuc
             return;
         }
 
-        if ( name == "qjs_int_ashr" )
+        if ( name == "qjs_val_ashr" )
         {
             get1( insn );
             builder.add_instr( qthu::as::shr_() );
@@ -209,7 +210,7 @@ namespace qthu::cthuc
             return;
         }
 
-        if ( name.starts_with( "qjs_int_cons_" ) )
+        if ( name.starts_with( "qjs_val_cons_" ) )
         {
             int result{};
             auto [ ptr, ec ] = std::from_chars( name.data() + 13, name.data() + name.size(), result);
@@ -227,32 +228,32 @@ namespace qthu::cthuc
             return;
         }
 
-        if ( name == "qjs_bool_not" )
+        if ( name == "qjs_val_not" )
         {
             get1( insn );
             builder.add_instr( qthu::as::not_() );
             return;
     }
 
-        if ( name == "qjs_bool_and" )
+        if ( name == "qjs_val_and" )
         {
             binary_insn( insn, qthu::as::and_() );
             return;
         }
 
-        if ( name == "qjs_bool_or" )
+        if ( name == "qjs_val_or" )
         {
             binary_insn( insn, qthu::as::or_() );
             return;
         }
 
-        if ( name == "qjs_bool_xor" )
+        if ( name == "qjs_val_xor" )
         {
             binary_insn( insn, qthu::as::xor_() );
             return;
         }
 
-        if ( name == "qjs_bool_assert" )
+        if ( name == "qjs_val_assert" )
         {
             auto label = make_label();
             get1( insn );

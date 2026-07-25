@@ -49,7 +49,7 @@ structure num : arithmetic[ num, stck, bool ]
     le?   = qjs_num_le
     gt?   = qjs_num_gt
     ge?   = qjs_num_ge
-    cons = qjs_num_cons
+    cons  = qjs_num_cons
 )
 
 structure jsbool : simple[ jsbool, stck, bool ]

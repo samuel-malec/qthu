@@ -9,12 +9,12 @@ namespace qthu::cthuc
         if ( c == cat::comment )
             return ch != '\n';
         if ( c == cat::ident )
-            return ch <= 255 && std::isalnum( ch ) ||
-                   ch >= 0x2070 && ch < 0x20a0 ||
-                   ch >= 0x00b0 && ch < 0x00c0 ||
-                   ch >= 0x1d62 && ch < 0x1d66 ||
-                   ch == U'?' || ch == U'_' || ch == U'\'';
-
+            return ch <= 255    && std::isalnum( ch ) ||
+                   ch >= 0x2070 && ch < 0x20a0        ||
+                   ch >= 0x00b0 && ch < 0x00c0        ||
+                   ch >= 0x1d62 && ch < 0x1d66        ||
+                   ch == U'?'   || ch == U'_'         ||
+                   ch == U'\''  || ch == U'%';
         return false;
     }
 
@@ -41,7 +41,7 @@ namespace qthu::cthuc
         if ( peek_any( U"\t\r " ) )
             return shift(), drop();
 
-        if ( auto c = peek(); c <= 255 && std::isalpha( c ) )
+        if ( auto c = peek(); c <= 255 && ( std::isalpha( c ) || c == '%' ) )
             return start( cat::ident );
 
         if ( accept_any( U"[]", cat::bracket ) )
@@ -67,10 +67,8 @@ namespace qthu::cthuc
              accept( U"∅", cat::ident ) ||
              accept( U"→", cat::arrow ) ||
              accept( U"->", cat::arrow ) )
-        {
             return;
-        }
-        
+ 
         throw std::runtime_error( std::format( "Invalid .ct format at line: {}, in column: {}", loc.line, loc.col ) );
     }
 }

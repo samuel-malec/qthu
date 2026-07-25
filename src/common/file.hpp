@@ -36,7 +36,7 @@ inline void dump_bytes( std::string path, const std::vector< std::uint8_t >& byt
 {
     std::ofstream out( path, std::ios::binary );
     if ( !out.is_open() )
-        throw std::runtime_error( "Couldn't open output file " + path );
+        throw std::runtime_error( "Couldn't open file at: " + path );
 
     out.write( reinterpret_cast< const char* >( bytes.data() ), bytes.size() );
 }

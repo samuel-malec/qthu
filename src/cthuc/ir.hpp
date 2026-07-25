@@ -229,9 +229,9 @@ struct program
         insn_key key{ insn.structure, insn.operation };
         
         // add cons_ on demand
-        if ( op_name.starts_with( "cons_" ) && st.name_of( insn.structure ) == "int" )
+        if ( op_name.starts_with( "cons_" ) && st.name_of( insn.structure ) == "jsvalue" )
         {
-            std::string builtin_name = "qjs_int_";
+            std::string builtin_name = "qjs_val_";
             builtin_name += st.name_of( key.op );
             auto atom = st.get( builtin_name );
             builtins[ key ] = atom;

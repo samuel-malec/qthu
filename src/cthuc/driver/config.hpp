@@ -12,8 +12,8 @@ namespace qthu::cthuc
 
 struct config
 {
-    std::string in_name;
-    std::string out_name;
+    std::string in_path;
+    std::string out_path;
     std::string path_to_cthu;
 };
 
@@ -22,13 +22,13 @@ inline void help()
     std::cout << "Usage:\n"
               << "./cthuc file.ct\n" 
               << "-p path (path to folder containing prelude.ct and builtins.ct)\n"
-              << "[-o out.ct]\n";
+              << "[-o out]\n";
 }
 
 inline config parse_config( int argc, char* const* argv )
 {
     if ( argc < 1 )
-        throw std::runtime_error( "Usage: ./cthuc file.js [-o out.ct]\n" );
+        throw std::runtime_error( "Usage: ./cthuc file.js [-o out]\n" );
     
     if ( strcmp( argv[ 0 ], "-h" ) == 0 )
     {
@@ -37,7 +37,7 @@ inline config parse_config( int argc, char* const* argv )
     }
 
     std::string file_in = argv[ 0 ];
-    std::string file_out = "out.ct";
+    std::string file_out = "a.qbc";
     std::string path_to_cthu = "/";
     
     for ( int i = 1; i < argc; ++i )
@@ -63,8 +63,8 @@ inline config parse_config( int argc, char* const* argv )
     }
 
     return  { 
-            .in_name = file_in,
-            .out_name = file_out,
+            .in_path = file_in,
+            .out_path = file_out,
             .path_to_cthu = path_to_cthu
         };
 }
