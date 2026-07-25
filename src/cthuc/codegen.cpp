@@ -213,9 +213,8 @@ namespace qthu::cthuc
         if ( name.starts_with( "qjs_val_cons_" ) )
         {
             int result{};
-            auto [ ptr, ec ] = std::from_chars( name.data() + 13, name.data() + name.size(), result);
-            builder.add_instr( qthu::as::push_i32_( result ) );
-            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            size_t offset = 13; // length of 'qjs_val_cons_'
+            auto [ ptr, ec ] = std::from_chars( name.data() + offset, name.data() + name.size(), result);
 
             if ( ec == std::errc::invalid_argument )
                 throw std::runtime_error( std::string( name ) + std::string(" argument of cons_ is not a number" ) );
