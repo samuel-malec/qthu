@@ -156,7 +156,6 @@ struct instr
     }
 };
  
-// TODO: parameters
 struct function
 {
     sema::function_id name;

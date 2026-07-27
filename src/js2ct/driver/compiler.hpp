@@ -33,16 +33,21 @@ struct compiler
         sema::analyzer analyzer;
         auto semantics = analyzer.run( ast );
 
-        hir::ast_lowerer alow{ semantics };
-        hir::module hir = alow.lower_ast( ast );
+        std::cout << "lowering to hir\n";
+        hir::lowerer hir_lowerer{ semantics };
+        hir::module hir = hir_lowerer.lower( ast );
         if ( conf.emit_hir )
             printer.print_hir( std::cout, hir, semantics );
-
-        lin::program linear = lower_hir( hir, semantics );
+        
+        std::cout << "lowering to linear\n";
+        lin::lowerer lin_lowerer{ semantics };
+        lin::program linear = lin_lowerer.lower( hir );
         if ( conf.emit_lin )
             printer.print_lin_program( std::cout, linear );
 
-        cthu::module ct = lower_linear( linear );
+        std::cout << "lowering to cthu\n";
+        cthu::lowerer cthu_lowerer{};
+        cthu::module ct = cthu_lowerer.lower( linear );
         std::ofstream out( conf.out_path );
         if ( !out.is_open() )
             throw std::runtime_error( "Couldn't open file at: " + conf.out_path );

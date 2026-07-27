@@ -7,9 +7,7 @@
 namespace qthu::js2ct::hir
 {
 
-
-
-struct ast_lowerer
+struct lowerer
 {
     sema::analysis_result& sema;
 
@@ -231,7 +229,7 @@ struct ast_lowerer
         mod.functions.push_back( std::move( fc.fn ) );
     }
 
-    hir::module lower_ast( ast::program& ast )
+    hir::module lower( ast::program& ast )
     {
         hir::module mod{};
         func_ctx fc{};

@@ -4,10 +4,10 @@
 #include "../ir/linear.hpp"
 #include "../printer/pretty_printer.hpp"
 
-namespace qthu::js2ct
+namespace qthu::js2ct::cthu
 {
 
-struct ct_builder
+struct cthu_builder
 {
     lin::function& lin_fn;
     cthu::function cthu_fn;
@@ -92,27 +92,30 @@ struct ct_builder
 void lower_structure( cthu::module& mod, std::string name, lin::function& fn )
 {
     cthu::structure st{ .id = name };
-    ct_builder cb{ .lin_fn = fn };
+    cthu_builder cb{ .lin_fn = fn };
     st.functions[ "run" ] = std::move( cb.lower_fn() );
     mod.structures.push_back( std::move( st ) );
 }
 
-cthu::module lower_linear( lin::program& prog )
+struct lowerer
 {
-    cthu::module mod{};
-    
-    for ( int i = 0; i < prog.functions.size(); ++i )
+    cthu::module lower( lin::program& prog )
     {
-        std::string name = "";
-        if ( i == 0 )
-            name = "main";
-        else
-            name = "f" + std::to_string( i );
+        cthu::module mod{};
+        
+        for ( int i = 0; i < prog.functions.size(); ++i )
+        {
+            std::string name = "";
+            if ( i == 0 )
+                name = "main";
+            else
+                name = "f" + std::to_string( i );
 
-        lower_structure( mod, name, prog.functions[ i ] );
+            lower_structure( mod, name, prog.functions[ i ] );
+        }
+
+        return mod;
     }
-
-    return mod;
-}
+};
 
 }

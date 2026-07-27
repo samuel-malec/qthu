@@ -3,13 +3,13 @@
 #include "../ir/linear.hpp"
 #include "../ir/hir.hpp"
 
-namespace qthu::js2ct
+namespace qthu::js2ct::lin
 {
 
 struct rename_env
 {
     std::unordered_map< std::uint32_t, lin::value > current;
- 
+    
     lin::value& at( sema::binding_id bid ) { return current.at( bid.value ); }
     void set( sema::binding_id bid, lin::value v ) { current[ bid.value ] = v; }
     bool has( sema::binding_id bid ) const { return current.contains( bid.value ); }
@@ -27,7 +27,6 @@ struct hir_to_linear
     sema::analysis_result& sema;
     value_namer vn;
 
-    // TODO: We will probably have to put constant into values, since then doing cons_ is much harder
     lin::argument lower_expr( rename_env& env, std::vector< lin::instr >& body, hir::expr_id eid )
     {
         const auto& node = fn.get( eid );
@@ -166,25 +165,33 @@ struct hir_to_linear
     {
         lin::function res{ .name = fn.id, .body = {} };
         rename_env env;
+        for ( auto& p : fn.parameters )
+            env.set( p, vn.fresh() );
+
         lower_stmt( env, res.body, fn.body_root );
         return res;
     }
-
 };
 
-inline lin::program lower_hir( hir::module& mod, sema::analysis_result& sema )
+struct lowerer
 {
-    lin::program prog{};
-    hir_to_linear script_lowering{ mod.script, sema };
-    prog.functions.push_back( script_lowering.lower_function() );
+    sema::analysis_result& sema;
 
-    for ( auto& fn : mod.functions )
+    lin::program lower( hir::module& mod )
     {
-        hir_to_linear fl{ fn, sema };
-        prog.functions.push_back( fl.lower_function() );
-    }
+        lin::program prog{};
+        hir_to_linear script_lowering{ mod.script, sema };
+        prog.functions.push_back( script_lowering.lower_function() );
 
-    return prog;
-}
+        for ( auto& fn : mod.functions )
+        {
+            hir_to_linear fl{ fn, sema };
+            prog.functions.push_back( fl.lower_function() );
+        }
+        std::cout << "finished \n";
+
+        return prog;
+    } 
+};
 
 }
