@@ -33,7 +33,7 @@ void lexer::next()
         ptr = sv.find( "*/" );
         if ( ptr == sv.npos )
             throw std::runtime_error( "unterminated multi-line comment" );
-        ptr++;
+        ptr += 2;
         return;
     }
 

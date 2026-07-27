@@ -17,12 +17,11 @@ namespace qthu::js2ct::lin
 struct value
 {
     uint32_t id;
-    uint32_t version = 0;
 };
  
 inline bool operator<( const value& lhs, const value& rhs )
 {
-    return lhs.id != rhs.id ? lhs.id < rhs.id : lhs.version < rhs.version;
+    return lhs.id < rhs.id;
 }
  
 using constant = std::variant< uint64_t, bool >;
@@ -56,7 +55,15 @@ struct copy_data
     argument arg1;
     value target;
 };
- 
+
+struct dup_data
+{
+    argument arg1;
+    value first;
+    value second;
+};
+
+// Why is result here ? 
 struct if_data
 {
     argument cond;
@@ -92,6 +99,7 @@ struct instr
                             unary_data,
                             binary_data,
                             copy_data,
+                            dup_data,
                             if_data,
                             loop_data,
                             call_data,
@@ -99,7 +107,7 @@ struct instr
                             brk_data,
                             cont_data >;
     data_type data;
- 
+    
     void for_each_use( auto&& f )
     {
         auto visit_operand = [ & ]( argument& o )
@@ -168,5 +176,5 @@ struct program
 
     function& get_script() { assert( !functions.empty() ); return functions[ 0 ]; }
 };
- 
+
 }
