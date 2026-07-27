@@ -62,3 +62,10 @@ structure jsbool : simple[ jsbool, stck, bool ]
     top  = qjs_jsbool_top
     opt  = qjs_jsbool_opt
 )
+
+structure fᵢⁱ : f₁¹[ func, jsvalue, bool, jsvalue, jsvalue ]
+(
+    call = qjs_func_call
+    join = qjs_func_join
+    opt  = qjs_func_opt
+)

@@ -78,5 +78,3 @@ structure main
         jsvalue assert c
     )
 )
-
-

@@ -54,6 +54,7 @@ struct ct_builder
 
     cthu::function lower_fn()
     {
+        // todo: add function params...
         for ( auto& i : lin_fn.body )
         {
             if ( auto* cd = std::get_if< lin::cons_data >( &i.data ) )
@@ -72,8 +73,10 @@ struct ct_builder
 
             else if ( auto* c = std::get_if< lin::copy_data >( &i.data ) )
                 emit( "jsvalue", "dup", { c->arg1 }, { c->target } );
+
             else
                 assert( false && "unimplemented" );
+
             // else if ( auto* c = std::get_if< lin::call_data >( &i.data ) )
             // else if ( auto* r = std::get_if< lin::ret_data >( &i.data ) )
             // else if ( auto* id = std::get_if< lin::if_data >( &i.data ) )

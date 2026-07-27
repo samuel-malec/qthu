@@ -162,13 +162,14 @@ void pretty_printer::print_ast_stmt( std::ostream& out, ast::stmt& s, int depth 
 
 void pretty_printer::print_ast( std::ostream& out, ast::program& ast )
 {
+    out << "\n[AST]\n";
     for ( auto& s : ast.statements )
         print_ast_stmt( out, *s, 1 );
 }
 
 void pretty_printer::print_lin_value( std::ostream& out, const lin::value& v )
 {
-    out << "%" << v.id.value;
+    out << "%" << v.id;
 
     if ( v.version != 0 )
         out << "." << v.version;
@@ -312,7 +313,7 @@ void pretty_printer::print_lin_function( std::ostream& out, const lin::function&
 
 void pretty_printer::print_lin_program( std::ostream& out, const lin::program& p )
 {
-    out << "[ program ]\n";
+    out << "\n[LIN]\n";
 
     for ( auto& fn : p.functions )
         print_lin_function( out, fn );
@@ -503,6 +504,7 @@ void pretty_printer::print_hir_function( std::ostream& out, hir::function& fn, s
 
 void pretty_printer::print_hir( std::ostream& out, hir::module& mod, sema::analysis_result& semantics )
 {
+    out << "\n[HIR]\n"; 
     print_hir_function( out, mod.script, semantics );
     out << "\n";
 

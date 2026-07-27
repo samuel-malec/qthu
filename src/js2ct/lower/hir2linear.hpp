@@ -18,7 +18,7 @@ struct rename_env
 struct value_namer
 {
     uint32_t next = 0;
-    lin::value fresh() { return lin::value{ .id = lin::value_id{ next++ }, .version = 0 }; };
+    lin::value fresh() { return lin::value{ .id = next++, .version = 0 }; };
 };
 
 struct hir_to_linear

@@ -1,7 +1,8 @@
 type stck
 
-type jsvalue ; every js runtime value
+type func
 
+type jsvalue ; every js runtime value
 type tag
 type num
 type str
@@ -64,4 +65,12 @@ signature boxed[ T, U ]
 (
     box   ∷ U → T
     unbox ∷ T → U
+)
+
+; base signature for functions (although this will most likely have to change once we support first-class functions)
+signature f₁¹[ F, S, B, I, O ] : simple[ F, S, B ]
+(
+    call ∷ F × I → O
+    opt  ∷ B × F → F
+    join ∷ F × F × F → F
 )

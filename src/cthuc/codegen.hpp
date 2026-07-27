@@ -142,7 +142,9 @@ struct codegen
                     builder.add_instr( put_loc_( insn.slots_out[ 0 ] ) );
                     break;
                 }
-
+            
+                // todo: this is probably wrong, since the function can be a result of opt ad therefore undefined,
+                // we should check if the function is undefined to prevent runtime crashes
                 case resolved_insn::kind_t::fn_call:
                 {
                     const uint16_t argc = static_cast< uint16_t >( insn.slots_in.size() - 1 );

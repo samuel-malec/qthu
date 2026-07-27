@@ -14,21 +14,15 @@
 namespace qthu::js2ct::lin
 {
  
-struct value_id 
-{ 
-    uint32_t value;
-    auto operator<=>( const value_id& ) const = default;
-};
- 
 struct value
 {
-    value_id id;
+    uint32_t id;
     uint32_t version = 0;
 };
  
 inline bool operator<( const value& lhs, const value& rhs )
 {
-    return lhs.id.value != rhs.id.value ? lhs.id.value < rhs.id.value : lhs.version < rhs.version;
+    return lhs.id != rhs.id ? lhs.id < rhs.id : lhs.version < rhs.version;
 }
  
 using constant = std::variant< uint64_t, bool >;
