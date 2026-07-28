@@ -1,2 +1,2 @@
 let x = 10;
-let y = x + x;
+let y = x + x + x;
