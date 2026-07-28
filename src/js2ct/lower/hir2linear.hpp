@@ -70,7 +70,6 @@ struct hir_to_linear
         else if ( auto* a = std::get_if< hir::expr::assign >( &node.data ) )
         {
             lin::argument val = lower_expr( env, sink, a->value );
-
             lin::value v;
             if ( auto* existing = std::get_if< lin::value >( &val ) )
                 v = *existing;
@@ -182,32 +181,62 @@ struct hir_to_linear
         int remaining;
         lin::value current;
     };
-    
-    std::unordered_map< uint32_t, info > compute_use_count( std::vector< lin::instr >& ins )
-    {
-        std::unordered_map< uint32_t, info > res;
 
+    // this won't work for nested blocks...
+    void collect_live_vars( std::vector< lin::instr >& ins, std::set< uint32_t >& live )
+    {
+        std::set< uint32_t > defined{};
         for ( auto& i : ins )
         {
             i.for_each_use( [ & ]( lin::value& v )
-            {
-                auto& info = res[ v.id ];
-                info.total++;
+            { 
+                if ( !defined.contains( v.id ) )
+                    live.insert( v.id );
             });
+            if ( auto t = i.get_target() )
+                defined.insert( t.value().id );
         }
-        return res;
+    } 
+
+    void compute_scope_use_count( std::unordered_map< uint32_t, info >& res, std::vector< lin::instr >& ins )
+    {
+        for ( auto& i : ins )
+        {
+            i.for_each_use( [ & ]( lin::value& v ) { res[ v.id ].total++; } );
+            // naive implementation of the live variables in both branches -> should we change our ir ? 
+            // the idea is to create functions from the condition branches
+            // the parameters of these functions will be the free variables inside their bodies...
+            // 
+            if ( auto* id = std::get_if< lin::if_data >( &i.data ) )
+            {   
+                std::set< uint32_t > live;
+                collect_live_vars( id->then_body, live );
+                collect_live_vars( id->else_body, live );
+
+                std::set< uint32_t > seen;
+                for ( auto& v : live )
+                    if ( seen.insert( v ).second )
+                        res[ v ].total++;
+            }
+            else if ( auto* ld = std::get_if< lin::loop_data >( &i.data ) )
+            {
+                std::set< uint32_t > live;
+                collect_live_vars( ld->body, live );
+                for ( auto& v : live )
+                    res[ v ].total++;
+            }
+        }
     }
 
-
-    std::vector< lin::instr > linearize( std::vector< lin::instr >& ins, value_namer& vn )
+    void linearize( std::vector< lin::instr >& sink, std::vector< lin::instr >& ins, value_namer& vn )
     {
-        std::vector< lin::instr > res{};
-        auto val_info = std::move( compute_use_count( ins ) );
+        std::unordered_map< uint32_t, info > val_info{};
+        compute_scope_use_count( val_info, ins );
+
         for ( auto& [ val, info ] : val_info )
         {
             info.remaining = info.total;
             info.current = lin::value{ .id = val };
-            std::cout << val << " " << info.total << '\n';
         }
 
         // rewrite operands
@@ -219,6 +248,7 @@ struct hir_to_linear
                 if ( info.remaining == 1 )
                 {
                     v.id = info.current.id;
+                    info.remaining--;
                     return;
                 }
 
@@ -226,8 +256,7 @@ struct hir_to_linear
                 {
                     auto v1 = vn.fresh();
                     auto v2 = vn.fresh();
-                    std::cout << "duping\n";
-                    res.push_back( lin::instr{ lin::dup_data{ .arg1 = info.current, .first = v1, .second = v2 } } );
+                    sink.push_back( lin::instr{ lin::dup_data{ .arg1 = info.current, .first = v1, .second = v2 } } );
                     v.id = v1.id;
                     info.current = v2;
                 }
@@ -235,10 +264,23 @@ struct hir_to_linear
                 info.remaining--;
             });
 
-            res.push_back( std::move( i ) );
+            if ( auto* id = std::get_if< lin::if_data >( &i.data ) )
+            {
+                lin::if_data linear_if{};
+                linear_if.cond = std::move( id->cond );
+                linearize( linear_if.then_body, id->then_body, vn );
+                linearize( linear_if.else_body, id->else_body, vn );
+                sink.push_back( lin::instr{ .data = std::move( linear_if ) } );
+            }
+            else if ( auto* ld = std::get_if< lin::loop_data>( &i.data ) )
+            {
+                lin::loop_data linear_loop{};
+                linearize( linear_loop.body, ld->body, vn );
+                sink.push_back( lin::instr{ .data = std::move( linear_loop ) } );
+            }
+            else
+                sink.push_back( std::move( i ) );
         }
-
-        return res;
     }
 
     lin::function lower_function()
@@ -250,8 +292,8 @@ struct hir_to_linear
         
         std::vector< lin::instr > sink;
         lower_stmt( env, sink, fn.body_root );
-    
-        res.body = std::move( linearize( sink, vn ) );
+        
+        linearize( res.body, sink, vn );
         return res;
     }
 };

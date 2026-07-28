@@ -7,13 +7,20 @@
 namespace qthu::js2ct::cthu
 {
 
+struct struct_context
+{
+    uint32_t next_fn = 1;
+    uint32_t next_cmp = 1;
+};
+
 struct structure_builder
 {
     std::string name;
     lin::function& fn;
     cthu::structure* curr_struct = nullptr;
+    struct_context ctx;
 
-    std::vector< std::string > print_args( const std::vector< lin::argument >& args )
+    std::vector< std::string > args2str( const std::vector< lin::argument >& args )
     {
         std::vector< std::string > res{};
         print::pretty_printer pp{};
@@ -26,14 +33,22 @@ struct structure_builder
 
         return res;
     }
+    void emit(  cthu::function& fn,
+                std::string structure,
+                std::string op,
+                const std::vector< std::string >& in,
+                const std::vector< std::string >& out )
+    {
+        fn.body.push_back( cthu::insn{ structure, op, std::move( in ), std::move( out ) } );
+    }
 
     void emit(  cthu::function& fn,
                 std::string structure,
                 std::string op,
-                std::vector< lin::argument > in,
-                std::vector< lin::argument > out )
+                const std::vector< lin::argument >& in,
+                const std::vector< lin::argument >& out )
     {
-        fn.body.push_back( cthu::insn{ structure, op, std::move( print_args( in ) ), std::move( print_args( out ) ) } );
+        fn.body.push_back( cthu::insn{ structure, op, std::move( args2str( in ) ), std::move( args2str( out ) ) } );
     }
 
     std::string op_to_str( op_kind op )
@@ -57,6 +72,21 @@ struct structure_builder
         return "";
     }
 
+    std::string call_signature_name( size_t n )
+    {
+        return "f_" + std::string( n, 'i' ) + "_i";
+    }
+
+    std::string fresh_cmp()
+    {
+        return "cmp" + ctx.next_cmp++;
+    }
+
+    std::string fresh_fn( std::string prefix )
+    {
+        return prefix + ctx.next_fn++;
+    }
+
     void lower_fn( std::string name, std::vector< lin::instr >& ins )
     {
         cthu::function curr_fn{};
@@ -66,9 +96,9 @@ struct structure_builder
             if ( auto* cd = std::get_if< lin::cons_data >( &i.data ) )
             {
                 if ( auto* int_val = std::get_if< uint64_t >( &cd->c ) )
-                    emit( curr_fn, "jsvalue", "cons_" + std::to_string( *int_val ), {}, cd->target );
+                    emit( curr_fn, "jsvalue", "cons_" + std::to_string( *int_val ), {}, { cd->target } );
                 else
-                    emit( curr_fn, "jsvalue", "cons_" + std::get< bool >( cd->c ) ? "true" : "false", {}, cd->target );
+                    emit( curr_fn, "jsvalue", "cons_" + std::get< bool >( cd->c ) ? "true" : "false", {}, { cd->target } );
             }
 
             else if ( auto* u = std::get_if< lin::unary_data >( &i.data ) )
@@ -82,19 +112,33 @@ struct structure_builder
 
             else if ( auto* dd = std::get_if< lin::dup_data >( &i.data ) )
                 emit( curr_fn, "jsvalue", "dup", { dd->arg1 }, { dd->first, dd->second } );
-
-            else if ( auto* r = std::get_if< lin::ret_data >( &i.data ) )
+            else if ( auto* id = std::get_if< lin::if_data >( &i.data ) )
             {
-                // dup the condition into cmp1 and cmp2
-                // negate cmp2 into cmp
-                // create then, else, frame functions,
-                // fsig opt cmp1 then_ref -> alt1
-                // fsig opt cmp2 else_ref -> alt2
-                // fsig opt alt1 alt2 frame -> cont
-                // fsig call cont 
+                std::string cmp  = fresh_cmp();
+                std::string cmp1 = fresh_cmp();
+                std::string cmp2 = fresh_cmp();
+                std::string cmp3 = fresh_cmp();
+                
+                emit( curr_fn, "jsvalue", "dup", { cmp }, { cmp1, cmp2 } );
+                emit( curr_fn, "not", { cmp2 }, { cmp3 } );
+
+                std::string then_name = fresh_fn( "then" );
+                std::string else_name = fresh_fn( "else" );
+                std::string frame_name = fresh_fn( "frame" );
+                
+                lower_fn( then_name, id->then_body );
+                // todo: check how this behaves with empty functions
+                lower_fn( else_name, id->else_body );
+
+                // TODO: infer the parameter size of then, else
+                // call fsig on the sig
+                // emit fsig opt cmp1 then_ref -> alt1
+                // emit fsig opt cmp2 else_ref -> alt2
+                // emit fsig opt alt1 alt2 frame -> cont
+                // emit fsig call cont 
             }
 
-            else if ( auto* id = std::get_if< lin::if_data >( &i.data ) )
+            else if ( auto* r = std::get_if< lin::ret_data >( &i.data ) )
             {
             }
 
@@ -117,7 +161,6 @@ struct structure_builder
         lower_fn( "run", fn.body );
         return *curr_struct;
     }
-
 };
 
 struct lowerer

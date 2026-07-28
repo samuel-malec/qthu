@@ -232,11 +232,11 @@ void pretty_printer::print_lin_instr( std::ostream& out, const lin::instr& i, in
     else if ( auto* dd = std::get_if< lin::dup_data >( &i.data ) )
     {
         out << "[ dup ] ";
+        print_lin_argument( out, dd->arg1 );
+        out << " -> ";
         print_lin_value( out, dd->first );
         out << " , ";
         print_lin_value( out, dd->second );
-        out << " = ";
-        print_lin_argument( out, dd->arg1 );
         out << '\n';
     }
     else if ( auto* c = std::get_if< lin::call_data >( &i.data ) )

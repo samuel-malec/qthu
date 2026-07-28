@@ -63,7 +63,6 @@ struct dup_data
     value second;
 };
 
-// Why is result here ? 
 struct if_data
 {
     argument cond;
