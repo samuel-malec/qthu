@@ -2,15 +2,12 @@
  
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <variant>
 #include <vector>
  
 #include "../sema/types.hpp"
  
-/**
- * The purpose of this IR is to enforce linearity that Cthulhu requires
- * This is done by numbering each expression in the original code, such that the linearity condition is satisfied
- */
 namespace qthu::js2ct::lin
 {
  
@@ -175,5 +172,34 @@ struct program
 
     function& get_script() { assert( !functions.empty() ); return functions[ 0 ]; }
 };
+
+inline void collect_live_vars( std::vector< lin::instr >& ins, std::set< uint32_t >& live )
+{
+    std::set< uint32_t > defined{};
+    for ( auto& i : ins )
+    {
+        i.for_each_use( [ & ]( lin::value& v )
+        {
+            if ( !defined.contains( v.id ) )
+                live.insert( v.id );
+        });
+        if ( auto t = i.get_target() )
+            defined.insert( t.value().id );
+    }
+} 
+
+inline std::vector< uint32_t > ordered_free_vars( std::vector< lin::instr >& then_body,
+                                                  std::vector< lin::instr >& else_body )
+{
+    std::set< uint32_t > live{};
+    collect_live_vars( then_body, live );
+    collect_live_vars( else_body, live );
+
+    std::vector< uint32_t > res;
+    for ( auto val : live )
+        res.push_back( val );
+
+    return res;
+}
 
 }

@@ -1,51 +1,50 @@
-function abs(x) {
-    if (x < 0) {
-        return 0 - x;
-    } 
-    else {
-        return x;
-    }
+let x = 5;
+
+if ( x < 10 )
+{
+    x = x * 10;
 }
 
-/*
-structure abs
-(
-    then_0 = λ x → out
-    (
-        jsvalue cons_0     → zero
-        jsvalue sub zero x → out
-    )
+else
+{
+    x = x + 10;
+}
 
-    else_0 = λ x → out
-    (
-        jsvalue move x → out
-    )
+let y = x;
 
-    frame_0 = λ A B x → out
-    (
-        jsvalue dup x    → x₁ x₂
-        fᵢⁱ call A x₁ → out₁
-        fᵢⁱ call B x₂ → out₂
-        jsvalue join out₁ out₂ → out
-    )
-
-    run = λ x → out
-    (
-        jsvalue cons_0    → zero
-        jsvalue dup x     → x₁ x₂
-        jsvalue lt? x₁ zero → cmp
-        jsvalue dup cmp   → cmp₁ cmp₂
-        jsvalue not cmp₂  → cmp₃
-
-        abs then_0  → then_ref
-        abs else_0  → else_ref
-        abs frame_0 → frame
-
-        fᵢⁱ opt cmp₁ then_ref → alt₁
-        fᵢⁱ opt cmp₃ else_ref → alt₂
-        fᵢⁱ join alt₁ alt₂ frame → cont
-
-        fᵢⁱ call cont x₂ → out
-    )
-)
-*/
+/**
+ * structure main
+ * (
+    * then_branch() = λ x -> outs
+    * cons_10 -> b
+    * mul x, b -> out
+    * 
+    * ----------------------------------
+    * else_branch() = λ x -> out
+    * cons_10 -> b
+    * add x, b -> out
+    * -----------------------------------
+    * frame() = lambda A B x -> out
+    * dup x -> x1 ,x2
+    * fsig call A x1 -> out
+    * fsig call B x2 -> out
+    * 
+    * ----------------------------------
+    * run() = λ
+    * cons_5 -> a
+    * cons_10 -> b
+    * 
+    * le? a b -> cmp1
+    * dup cmp1 -> cmp1 cmp2
+    * not cmp2 -> cmp3
+    * 
+    * main then_branch -> then
+    * main else_branch -> else
+    * main frame ->       frame
+    * 
+    * opt cmp1 then_branch -> alt1
+    * opt cmp2 then_branch -> alt2
+    * 
+    *---------------------------------------- 
+    * )
+ */

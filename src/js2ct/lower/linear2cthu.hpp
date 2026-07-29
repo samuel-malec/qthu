@@ -7,18 +7,12 @@
 namespace qthu::js2ct::cthu
 {
 
-struct struct_context
-{
-    uint32_t next_fn = 1;
-    uint32_t next_cmp = 1;
-};
-
 struct structure_builder
 {
-    std::string name;
+    std::string struct_name;
     lin::function& fn;
     cthu::structure* curr_struct = nullptr;
-    struct_context ctx;
+    uint32_t next_val = 1;
 
     std::vector< std::string > args2str( const std::vector< lin::argument >& args )
     {
@@ -33,6 +27,7 @@ struct structure_builder
 
         return res;
     }
+
     void emit(  cthu::function& fn,
                 std::string structure,
                 std::string op,
@@ -77,15 +72,10 @@ struct structure_builder
         return "f_" + std::string( n, 'i' ) + "_i";
     }
 
-    std::string fresh_cmp()
+    std::string fresh_val( std::string prefix )
     {
-        return "cmp" + ctx.next_cmp++;
-    }
-
-    std::string fresh_fn( std::string prefix )
-    {
-        return prefix + ctx.next_fn++;
-    }
+        return prefix + std::to_string( next_val++ );
+    } 
 
     void lower_fn( std::string name, std::vector< lin::instr >& ins )
     {
@@ -114,41 +104,56 @@ struct structure_builder
                 emit( curr_fn, "jsvalue", "dup", { dd->arg1 }, { dd->first, dd->second } );
             else if ( auto* id = std::get_if< lin::if_data >( &i.data ) )
             {
-                std::string cmp  = fresh_cmp();
-                std::string cmp1 = fresh_cmp();
-                std::string cmp2 = fresh_cmp();
-                std::string cmp3 = fresh_cmp();
-                
-                emit( curr_fn, "jsvalue", "dup", { cmp }, { cmp1, cmp2 } );
-                emit( curr_fn, "not", { cmp2 }, { cmp3 } );
+                std::string cmp1 = fresh_val( "cmp" );
+                std::string cmp2 = fresh_val( "cmp" );
+                std::string cmp3 = fresh_val( "cmp" );
 
-                std::string then_name = fresh_fn( "then" );
-                std::string else_name = fresh_fn( "else" );
-                std::string frame_name = fresh_fn( "frame" );
+                emit( curr_fn, "jsvalue", "dup", args2str( { id->cond } ), { cmp1, cmp2 } );
+                emit( curr_fn, "jsvalue", "not", { cmp2 }, { cmp3 } );
+
+                std::string then_name = fresh_val( "then" );
+                std::string else_name = fresh_val( "else" );
+                std::string frame_name = fresh_val( "frame" );
                 
+                
+                std::vector< uint32_t > free_vars = ordered_free_vars( id->then_body, id->else_body );
+                // free vars should be parameters of these procedures 
                 lower_fn( then_name, id->then_body );
-                // todo: check how this behaves with empty functions
                 lower_fn( else_name, id->else_body );
 
-                // TODO: infer the parameter size of then, else
-                // call fsig on the sig
-                // emit fsig opt cmp1 then_ref -> alt1
-                // emit fsig opt cmp2 else_ref -> alt2
-                // emit fsig opt alt1 alt2 frame -> cont
-                // emit fsig call cont 
+                std::string fsig = call_signature_name( free_vars.size() );
+
+                emit( curr_fn, struct_name, "", { then_name }, { then_name } );
+                emit( curr_fn, struct_name, "", { else_name }, { else_name } );
+                
+                std::string alt1_name = fresh_val( "alt" );
+                std::string alt2_name = fresh_val( "alt" );
+                emit( curr_fn, fsig, "opt", { cmp1, then_name }, { alt1_name } );
+                emit( curr_fn, fsig, "opt", { cmp3, else_name}, { alt2_name } );
+
+                std::string cont = fresh_val( "cont" );
+                emit( curr_fn, fsig, "join", { alt1_name, alt2_name, frame_name }, { cont } );
+
+                // todo: pass free_vars as arguments...
+                // emit( curr_fn, fsig, "call", { cont } { })
             }
 
+            // todo: we should probably stop codegen of curr_fn after hitting return because everything that follows is dead code,
+            // but currently this is good for debugging.
             else if ( auto* r = std::get_if< lin::ret_data >( &i.data ) )
             {
+                // what to do with functions that don't "return" anything ? 
+                if ( r->arg )
+                    emit( curr_fn, "jsvalue", "move", args2str( { r->arg.value() } ), { "out" } );
             }
 
+            else if ( auto* c = std::get_if< lin::call_data >( &i.data ) ) {}
+            else if ( auto* l = std::get_if< lin::loop_data >( &i.data ) ) {}
+            else if ( std::get_if< lin::brk_data >( &i.data ) ) {}
+            else if ( std::get_if< lin::cont_data >( &i.data ) ) {}
             else
                 assert( false && "unimplemented" );
 
-            // else if ( auto* c = std::get_if< lin::call_data >( &i.data ) )
-            // else if ( auto* l = std::get_if< lin::loop_data >( &i.data ) )
-            // else if ( std::get_if< lin::brk_data >( &i.data ) )
-            // else if ( std::get_if< lin::cont_data >( &i.data ) )
         }        
 
         curr_struct->functions[ name ] = std::move( curr_fn );
@@ -156,7 +161,7 @@ struct structure_builder
 
     cthu::structure lower()
     {
-        cthu::structure res{ .id = name };
+        cthu::structure res{ .id = struct_name };
         curr_struct = &res;
         lower_fn( "run", fn.body );
         return *curr_struct;
@@ -170,8 +175,8 @@ struct lowerer
         cthu::module mod{};
         for ( int i = 0; i < prog.functions.size(); ++i )
         {
-            std::string name = i == 0 ? "main" : "f" + std::to_string( i );
-            structure_builder sb{ name, prog.functions[ i ] };
+            std::string struct_name = i == 0 ? "main" : "f" + std::to_string( i );
+            structure_builder sb{ struct_name, prog.functions[ i ] };
             mod.structures.push_back( std::move( sb.lower() ) );
         }
         return mod;
