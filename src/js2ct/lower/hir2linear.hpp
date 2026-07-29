@@ -179,31 +179,31 @@ struct hir_to_linear
             sink.push_back( lin::instr{ lin::ret_data{ val } } );
         }
 
-        // else if ( auto* st = std::get_if< hir::stmt::if_stmt >( &node.data ) )
-        // {
-        //     auto cond_arg = lower_expr( sink, st->cond );
+        else if ( auto* st = std::get_if< hir::stmt::if_stmt >( &node.data ) )
+        {
+            auto cond_arg = lower_expr( sink, st->cond );
 
-        //     rename_env then_env = env;
-        //     rename_env else_env = env;
+            rename_env then_env = env;
+            rename_env else_env = env;
 
-        //     std::vector< lin::instr > then_body;
-        //     std::swap( env, then_env );
-        //     env.push();
-        //     lower_stmt( then_body, st->then_branch );
-        //     env.pop();
-        //     std::swap( env, then_env );
+            std::vector< lin::instr > then_body;
+            std::swap( env, then_env );
+            env.push();
+            lower_stmt( then_body, st->then_branch );
+            env.pop();
+            std::swap( env, then_env );
 
-        //     std::vector< lin::instr > else_body;
-        //     if ( st->else_branch )
-        //     {
-        //         std::swap( env, else_env );
-        //         env.push();
-        //         lower_stmt( else_body, st->else_branch.value() );
-        //         env.pop();
-        //         std::swap( env, else_env );
-        //     }
-        //     // TODO: merge values from both branches
-        // }
+            std::vector< lin::instr > else_body;
+            if ( st->else_branch )
+            {
+                std::swap( env, else_env );
+                env.push();
+                lower_stmt( else_body, st->else_branch.value() );
+                env.pop();
+                std::swap( env, else_env );
+            }
+            // TODO: merge values from both branches
+        }
 
         else if ( auto* st = std::get_if< hir::stmt::loop_stmt >( &node.data ) )
         {
