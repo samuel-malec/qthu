@@ -1,24 +1,48 @@
 #pragma once
 
+#include <queue>
+
 #include "../ir/linear.hpp"
 #include "../ir/hir.hpp"
 
-namespace qthu::js2ct
+namespace qthu::js2ct::lin
 {
 
 struct rename_env
 {
-    std::unordered_map< std::uint32_t, lin::value > current;
- 
-    lin::value& at( sema::binding_id bid ) { return current.at( bid.value ); }
-    void set( sema::binding_id bid, lin::value v ) { current[ bid.value ] = v; }
-    bool has( sema::binding_id bid ) const { return current.contains( bid.value ); }
+    std::unordered_map< std::uint32_t, lin::value > scope;
+
+    lin::value& at( sema::binding_id bid ) 
+    {
+        if ( auto it = scope.find( bid.value ); it != scope.end() )
+            return it->second;
+
+        assert( false && "value not found" );
+    }
+
+    void declare( sema::binding_id bid, lin::value v ) { scope[ bid.value ] = v; }
+
+    void reassign( sema::binding_id bid, lin::value v )
+    {
+        if ( auto it = scope.find( bid.value ); it != scope.end() )
+        { 
+            it->second = v;
+            return;
+        }
+
+        assert( false && "reassigning a binding that was never declared" );
+    }
+
+    bool has( sema::binding_id bid ) 
+    {
+        return scope.contains( bid.value );
+    }
 };
 
 struct value_namer
 {
     uint32_t next = 0;
-    lin::value fresh() { return lin::value{ .id = next++, .version = 0 }; };
+    lin::value fresh() { return lin::value{ .id = next++ }; };
 };
 
 struct hir_to_linear
@@ -27,60 +51,62 @@ struct hir_to_linear
     sema::analysis_result& sema;
     value_namer vn;
 
-    // TODO: We will probably have to put constant into values, since then doing cons_ is much harder
-    lin::argument lower_expr( rename_env& env, std::vector< lin::instr >& body, hir::expr_id eid )
+    void clean_scope()
+    {
+        // TODO:
+        // This should pop, and drop all the vars that are live still
+    }
+
+    lin::argument lower_expr( std::vector< lin::instr >& sink, rename_env& env, hir::expr_id eid )
     {
         const auto& node = fn.get( eid );
-
         if ( auto* lit = std::get_if< hir::expr::int_lit >( &node.data ) )
         {
             lin::value target = vn.fresh();
-            body.push_back( lin::instr{ lin::cons_data{ .c = lit->value, .target = target } } );
+            sink.push_back( lin::instr{ lin::cons_data{ .c = lit->value, .target = target } } );
             return target;
         }
 
         else if ( auto* lit = std::get_if< hir::expr::bool_lit >( &node.data ) )
         {
             lin::value target = vn.fresh();
-            body.push_back( lin::instr{ lin::cons_data{ .c = lit->value, .target = target } } );
+            sink.push_back( lin::instr{ lin::cons_data{ .c = lit->value, .target = target } } );
             return target;
         }
 
         else if ( auto* v = std::get_if< hir::expr::var >( &node.data ) )
-            return env.at( v->id );
+        {
+            lin::value fst = vn.fresh();
+            lin::value snd = vn.fresh();
+            sink.push_back( lin::instr{ lin::dup_data{ .arg1 = env.at( v->id ), .first = fst, .second = snd } } );
+            env.reassign( v->id, snd );
+            return fst;
+        }
 
         else if ( auto* u = std::get_if< hir::expr::unary >( &node.data ) )
         {
-            lin::argument sub = lower_expr( env, body, u->sub );
+            lin::argument sub = lower_expr( sink, env, u->sub );
             lin::value target = vn.fresh();
-            body.push_back( lin::instr{ lin::unary_data{ u->op, sub, target } } );
+            sink.push_back( lin::instr{ lin::unary_data{ u->op, sub, target } } );
             return target;
         }
 
         else if ( auto* b = std::get_if< hir::expr::binary >( &node.data ) )
         {
-            lin::argument l = lower_expr( env, body, b->left );
-            lin::argument r = lower_expr( env, body, b->right );
+            lin::argument l = lower_expr( sink, env, b->left );
+            lin::argument r = lower_expr( sink, env, b->right );
             lin::value target = vn.fresh();
-            body.push_back( lin::instr{ lin::binary_data{ b->op, l, r, target } } );
+            sink.push_back( lin::instr{ lin::binary_data{ b->op, l, r, target } } );
             return target;
         }
 
         else if ( auto* a = std::get_if< hir::expr::assign >( &node.data ) )
         {
-            lin::argument val = lower_expr( env, body, a->value );
-
-            lin::value v;
-            if ( auto* existing = std::get_if< lin::value >( &val ) )
-                v = *existing;
-            else
-            {
-                v = vn.fresh();
-                body.push_back( lin::instr{ lin::copy_data{ val, v } } );
-            }
-
-            env.set( a->target, v );
-            return v;
+            lin::argument val = lower_expr( sink, env, a->value );
+            auto target = env.at( a->target );
+            sink.push_back( lin::instr{ lin::drop_data{ .target = target } } );
+            sink.push_back( lin::instr{ lin::copy_data{ .arg1 = val, .target = target } } );
+            return target;
         }
 
         else if ( auto* c = std::get_if< hir::expr::call >( &node.data ) )
@@ -89,102 +115,138 @@ struct hir_to_linear
             std::vector< lin::argument > args;
 
             for ( auto arg : c->args )
-                args.push_back( lower_expr( env, body, arg ) );
+                args.push_back( lower_expr( sink, env, arg ) );
 
             lin::value target = vn.fresh();
-            body.push_back( lin::instr{ lin::call_data{ c->target, std::move( args ), target } } );
+            sink.push_back( lin::instr{ lin::call_data{ c->target, std::move( args ), target } } );
             return target;
         }
 
         assert( false );
     }
     
-    void lower_stmt( rename_env& env, std::vector< lin::instr >& body, hir::stmt_id sid )
+    //  This doesn't work for the stacks that we return from the procedure 
+    void cleanup_env( rename_env& env, std::vector< lin::instr >& sink )
+    {
+        for ( auto& [ bid, val ] : env.scope )
+            sink.push_back( lin::instr{ .data = lin::drop_data{ .target = val } } );
+    }
+    
+    void lower_stmt( std::vector< lin::instr >& sink, rename_env& env, hir::stmt_id sid )
     {
         const auto& node = fn.get( sid );
+        if ( auto* es = std::get_if< hir::stmt::expr_stmt >( &node.data ) )
+            lower_expr( sink, env, es->expr );
 
-        if ( auto* st = std::get_if< hir::stmt::expr_stmt >( &node.data ) )
-            lower_expr( env, body, st->expr );
-
-        else if ( auto* st = std::get_if< hir::stmt::block >( &node.data ) )
+        else if ( auto* b = std::get_if< hir::stmt::block >( &node.data ) )
         {
-            for ( auto sub : st->stmts )
-                lower_stmt( env, body, sub );
+            for ( auto sub : b->stmts )
+                lower_stmt( sink, env, sub );
         }
 
-        else if ( auto* st = std::get_if< hir::stmt::let_stmt >( &node.data ) )
+        else if ( auto* ls = std::get_if< hir::stmt::let_stmt >( &node.data ) )
         {
             lin::value v;
-            if ( st->value )
+            if ( ls->value )
             {
-                lin::argument a = lower_expr( env, body, *st->value );
-
+                lin::argument a = lower_expr( sink, env, *ls->value );
                 if ( auto* value = std::get_if< lin::value >( &a ) )
                     v = *value;
                 else
                 {
                     v = vn.fresh();
-                    body.push_back( lin::instr{ lin::copy_data{ a, v } } );
+                    sink.push_back( lin::instr{ lin::copy_data{ a, v } } );
                 }
             }
             else
-                v = vn.fresh(); // TODO: what to do with uninitialized vars
-
-            env.set( st->target, v );
+                v = vn.fresh();
+            env.declare( ls->target, v );
         }
 
-        else if ( auto* st = std::get_if< hir::stmt::ret_stmt >( &node.data ) )
+        else if ( auto* rs = std::get_if< hir::stmt::ret_stmt >( &node.data ) )
         {
             std::optional< lin::argument > val;
-            if ( st->value )
-                val = lower_expr( env, body, *st->value );
-
-            body.push_back( lin::instr{ lin::ret_data{ val } } );
+            if ( rs->value )
+                val = lower_expr( sink, env, *rs->value );
+            sink.push_back( lin::instr{ lin::ret_data{ val } } );
         }
 
-        else if ( auto* st = std::get_if< hir::stmt::if_stmt >( &node.data ) )
-            assert( false );
+        else if ( auto* ifd = std::get_if< hir::stmt::if_stmt >( &node.data ) )
+        {
+            auto condarg = lower_expr( sink, env, ifd->cond );
+            
+            std::vector< value > params{};
+            for ( auto& [ bid, val ] : env.scope )
+                params.push_back( val );
+
+            std::vector< lin::instr > then_body;
+            rename_env then_env = env;
+            lower_stmt( then_body, then_env, ifd->then_branch );
+            cleanup_env( then_env, then_body );
+
+            std::vector< lin::instr > else_body;
+            if ( ifd->else_branch )
+            {
+                rename_env else_env = env;
+                lower_stmt( else_body, else_env, ifd->else_branch.value() );
+                cleanup_env( else_env, else_body );
+            }
+
+            sink.push_back( lin::instr{ lin::if_data{ .cond = condarg, 
+                           .then_body = std::move( then_body ),
+                           .else_body = std::move( else_body ),
+                           .params = std::move( params ) } } );
+        }
 
         else if ( auto* st = std::get_if< hir::stmt::loop_stmt >( &node.data ) )
         {
+            rename_env loop_env = env;
             std::vector< lin::instr > loop_body;
-            lower_stmt( env, loop_body, st->body );
-            body.push_back( lin::instr{ lin::loop_data{ std::move( loop_body ) } } );
+            lower_stmt( loop_body, loop_env, st->body );
+            sink.push_back( lin::instr{ lin::loop_data{ std::move( loop_body ) } } );
+            cleanup_env( loop_env, loop_body );
         }
 
         else if ( std::get_if< hir::stmt::brk >( &node.data ) )
-            body.push_back( lin::instr{ lin::brk_data{} } );
+            assert( false && "unimplemented" );
 
         else if ( std::get_if< hir::stmt::cont >( &node.data ) )
-            body.push_back( lin::instr{ lin::cont_data{} } );
+            assert( false && "unimplemented" );
 
         else
-            assert( false );
+            assert( false && "unimplemented" );
     }
 
     lin::function lower_function()
     {
-        lin::function res{ .name = fn.id, .body = {} };
-        rename_env env;
-        lower_stmt( env, res.body, fn.body_root );
+        lin::function res{ .name = fn.id, .body {} };
+        rename_env env{};
+        
+        for ( auto& p : fn.parameters )
+            env.declare( p, vn.fresh() ); 
+        lower_stmt( res.body, env, fn.body_root );
+        cleanup_env( env, res.body );
+
         return res;
     }
-
 };
 
-inline lin::program lower_hir( hir::module& mod, sema::analysis_result& sema )
+struct lowerer
 {
-    lin::program prog{};
-    hir_to_linear script_lowering{ mod.script, sema };
-    prog.functions.push_back( script_lowering.lower_function() );
-
-    for ( auto& fn : mod.functions )
+    sema::analysis_result& sema;
+    lin::program lower( hir::module& mod )
     {
-        hir_to_linear fl{ fn, sema };
-        prog.functions.push_back( fl.lower_function() );
-    }
+        lin::program prog{};
+        hir_to_linear script_lowering{ mod.script, sema };
+        prog.functions.push_back( std::move( script_lowering.lower_function() ) );
 
-    return prog;
-}
+        for ( auto& fn : mod.functions )
+        {
+            hir_to_linear fl{ fn, sema };
+            prog.functions.push_back( std::move( fl.lower_function() ) );
+        }
+        return prog;
+    } 
+};
 
 }

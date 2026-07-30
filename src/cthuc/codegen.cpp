@@ -4,6 +4,7 @@
 
 namespace qthu::cthuc
 {
+    // This is not the semantics of cthulhu join, it is done this way to simplify the codegen
     void codegen::emit_fn_join( const lowered_insn& insn )
     {
         auto else_label = make_label();

@@ -123,7 +123,6 @@ void pretty_printer::print_ast_stmt( std::ostream& out, ast::stmt& s, int depth 
     else if ( auto* i = std::get_if< ast::if_stmt >( &s.data ) )
     {
         out << "[ if ]\n";
-
         pad( out, depth + 1 );
         out << "[ condition ]\n";
         print_ast_expr( out, i->cond, depth + 2 );
@@ -170,9 +169,6 @@ void pretty_printer::print_ast( std::ostream& out, ast::program& ast )
 void pretty_printer::print_lin_value( std::ostream& out, const lin::value& v )
 {
     out << "%" << v.id;
-
-    if ( v.version != 0 )
-        out << "." << v.version;
 }
 
 void pretty_printer::print_lin_constant( std::ostream& out, const lin::constant& c )
@@ -230,6 +226,22 @@ void pretty_printer::print_lin_instr( std::ostream& out, const lin::instr& i, in
         print_lin_value( out, c->target );
         out << " = ";
         print_lin_argument( out, c->arg1 );
+        out << '\n';
+    }
+    else if ( auto* dd = std::get_if< lin::dup_data >( &i.data ) )
+    {
+        out << "[ dup ] ";
+        print_lin_argument( out, dd->arg1 );
+        out << " -> ";
+        print_lin_value( out, dd->first );
+        out << " , ";
+        print_lin_value( out, dd->second );
+        out << '\n';
+    }
+    else if ( auto* dr = std::get_if< lin::drop_data >( &i.data ) )
+    {
+        out << "[ drop ] ";
+        print_lin_value( out, dr->target );
         out << '\n';
     }
     else if ( auto* c = std::get_if< lin::call_data >( &i.data ) )
@@ -301,6 +313,8 @@ void pretty_printer::print_lin_instr( std::ostream& out, const lin::instr& i, in
     {
         out << "[ continue ]\n";
     }
+    else
+        assert( false && "unimplemented\n" );
 }
 
 void pretty_printer::print_lin_function( std::ostream& out, const lin::function& fn )

@@ -2,27 +2,23 @@
  
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <variant>
 #include <vector>
  
 #include "../sema/types.hpp"
  
-/**
- * The purpose of this IR is to enforce linearity that Cthulhu requires
- * This is done by numbering each expression in the original code, such that the linearity condition is satisfied
- */
 namespace qthu::js2ct::lin
 {
  
 struct value
 {
     uint32_t id;
-    uint32_t version = 0;
 };
  
 inline bool operator<( const value& lhs, const value& rhs )
 {
-    return lhs.id != rhs.id ? lhs.id < rhs.id : lhs.version < rhs.version;
+    return lhs.id < rhs.id;
 }
  
 using constant = std::variant< uint64_t, bool >;
@@ -56,20 +52,35 @@ struct copy_data
     argument arg1;
     value target;
 };
- 
+
+struct dup_data
+{
+    argument arg1;
+    value first;
+    value second;
+};
+
 struct if_data
 {
     argument cond;
     std::vector< instr > then_body;
     std::vector< instr > else_body;
+    std::vector< value > params;
     std::optional< value > result;
 };
  
 struct loop_data
 {
     std::vector< instr > body;
+    std::vector< value > params;
+    std::optional< value > result;
 };
- 
+
+struct drop_data
+{
+    value target;
+};
+
 struct call_data
 {
     sema::function_id callee;
@@ -92,6 +103,8 @@ struct instr
                             unary_data,
                             binary_data,
                             copy_data,
+                            dup_data,
+                            drop_data,
                             if_data,
                             loop_data,
                             call_data,
@@ -99,7 +112,7 @@ struct instr
                             brk_data,
                             cont_data >;
     data_type data;
- 
+    
     void for_each_use( auto&& f )
     {
         auto visit_operand = [ & ]( argument& o )
@@ -156,7 +169,6 @@ struct instr
     }
 };
  
-// TODO: parameters
 struct function
 {
     sema::function_id name;
@@ -169,5 +181,5 @@ struct program
 
     function& get_script() { assert( !functions.empty() ); return functions[ 0 ]; }
 };
- 
+
 }
