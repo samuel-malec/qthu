@@ -93,15 +93,14 @@ struct structure_builder
     cthu::function create_frame( const std::vector< std::string >& params, std::string fsig )
     {
         cthu::function res{};
+        res.out = { "out" };
         std::vector< std::string > param_names;
-        
         param_names.push_back( "A" );
         param_names.push_back( "B" );
         for ( auto& s : params )
             param_names.push_back( s );
         
         res.in = std::move( param_names );
-
         std::vector< std::string > dup_first{ "A" };
         std::vector< std::string > dup_second{ "B" };
 
@@ -169,7 +168,10 @@ struct structure_builder
                 std::string fsig = call_signature_name( params.size() );
 
                 curr_struct->functions[ then_name ].in = params;
+                curr_struct->functions[ then_name ].out = { "out" };
                 curr_struct->functions[ else_name ].in = params;
+                curr_struct->functions[ else_name ].out = { "out" };
+
                 cthu::function frame_fn = create_frame( params, fsig );
                 curr_struct->functions[ frame_name ] = std::move( frame_fn );
 
@@ -184,12 +186,13 @@ struct structure_builder
                 std::string cont = fresh_val( "cont" );
                 emit( curr_fn, fsig, "join", { alt1_name, alt2_name, frame_name }, { cont } );
 
-                // how to emit the call
-                emit( curr_fn, fsig, "call", { cont } { } )
+                std::vector< std::string > call_args{ cont };
+                for ( auto& p : params )
+                    call_args.push_back( std::move( p ) );
+                emit( curr_fn, fsig, "call", call_args, { "out" } );
             }
 
             // todo: we should probably stop codegen of curr_fn after hitting return because everything that follows is dead code,
-            // but currently this is good for debugging.
             else if ( auto* r = std::get_if< lin::ret_data >( &i.data ) )
             {
                 // what to do with functions that don't "return" anything ? 
