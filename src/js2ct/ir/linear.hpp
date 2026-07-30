@@ -65,14 +65,22 @@ struct if_data
     argument cond;
     std::vector< instr > then_body;
     std::vector< instr > else_body;
+    std::vector< value > params;
     std::optional< value > result;
 };
  
 struct loop_data
 {
     std::vector< instr > body;
+    std::vector< value > params;
+    std::optional< value > result;
 };
- 
+
+struct drop_data
+{
+    value target;
+};
+
 struct call_data
 {
     sema::function_id callee;
@@ -96,6 +104,7 @@ struct instr
                             binary_data,
                             copy_data,
                             dup_data,
+                            drop_data,
                             if_data,
                             loop_data,
                             call_data,
@@ -172,34 +181,5 @@ struct program
 
     function& get_script() { assert( !functions.empty() ); return functions[ 0 ]; }
 };
-
-inline void collect_live_vars( std::vector< lin::instr >& ins, std::set< uint32_t >& live )
-{
-    std::set< uint32_t > defined{};
-    for ( auto& i : ins )
-    {
-        i.for_each_use( [ & ]( lin::value& v )
-        {
-            if ( !defined.contains( v.id ) )
-                live.insert( v.id );
-        });
-        if ( auto t = i.get_target() )
-            defined.insert( t.value().id );
-    }
-} 
-
-inline std::vector< uint32_t > ordered_free_vars( std::vector< lin::instr >& then_body,
-                                                  std::vector< lin::instr >& else_body )
-{
-    std::set< uint32_t > live{};
-    collect_live_vars( then_body, live );
-    collect_live_vars( else_body, live );
-
-    std::vector< uint32_t > res;
-    for ( auto val : live )
-        res.push_back( val );
-
-    return res;
-}
 
 }

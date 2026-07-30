@@ -14,6 +14,19 @@ struct structure_builder
     cthu::structure* curr_struct = nullptr;
     uint32_t next_val = 1;
 
+    std::vector< std::string > vals2str( const std::vector< lin::value >& vals )
+    {
+        std::vector< std::string > res{};
+        print::pretty_printer pp{};
+        for ( auto& val : vals )
+        {
+            std::ostringstream os;
+            pp.print_lin_value( os, val );
+            res.push_back( std::move( os.str() ) );
+        }
+        return res;
+    }
+
     std::vector< std::string > args2str( const std::vector< lin::argument >& args )
     {
         std::vector< std::string > res{};
@@ -22,7 +35,7 @@ struct structure_builder
         {
             std::ostringstream os;
             pp.print_lin_argument( os, arg );
-            res.push_back( os.str() );
+            res.push_back( std::move( os.str() ) );
         }
 
         return res;
@@ -31,8 +44,8 @@ struct structure_builder
     void emit(  cthu::function& fn,
                 std::string structure,
                 std::string op,
-                const std::vector< std::string >& in,
-                const std::vector< std::string >& out )
+                std::vector< std::string > in,
+                std::vector< std::string > out )
     {
         fn.body.push_back( cthu::insn{ structure, op, std::move( in ), std::move( out ) } );
     }
@@ -40,8 +53,8 @@ struct structure_builder
     void emit(  cthu::function& fn,
                 std::string structure,
                 std::string op,
-                const std::vector< lin::argument >& in,
-                const std::vector< lin::argument >& out )
+                std::vector< lin::argument > in,
+                std::vector< lin::argument > out )
     {
         fn.body.push_back( cthu::insn{ structure, op, std::move( args2str( in ) ), std::move( args2str( out ) ) } );
     }
@@ -77,6 +90,36 @@ struct structure_builder
         return prefix + std::to_string( next_val++ );
     } 
 
+    cthu::function create_frame( const std::vector< std::string >& params, std::string fsig )
+    {
+        cthu::function res{};
+        std::vector< std::string > param_names;
+        
+        param_names.push_back( "A" );
+        param_names.push_back( "B" );
+        for ( auto& s : params )
+            param_names.push_back( s );
+        
+        res.in = std::move( param_names );
+
+        std::vector< std::string > dup_first{ "A" };
+        std::vector< std::string > dup_second{ "B" };
+
+        for ( int i = 2; i < res.in.size(); ++ i )
+        {
+            std::string fst = res.in[ i ] + "_1" ;
+            std::string snd = res.in[ i ] + std::string( "_2" );
+            dup_first.push_back( fst );
+            dup_second.push_back( snd );
+            emit( res, "jsvalue", "dup", { res.in[ i ] }, { fst, snd } );
+        }
+        
+        emit( res, fsig, "call", std::move( dup_first ), { "out1" } );
+        emit( res, fsig, "call", std::move( dup_second ), { "out2" } );
+        emit( res, "jsvalue", "join", { "out1", "out2" }, { "out" } );
+        return res;
+    }
+
     void lower_fn( std::string name, std::vector< lin::instr >& ins )
     {
         cthu::function curr_fn{};
@@ -98,10 +141,14 @@ struct structure_builder
                 emit( curr_fn, "jsvalue", op_to_str( b->op ), { b->arg1, b->arg2 }, { b->target } );
 
             else if ( auto* c = std::get_if< lin::copy_data >( &i.data ) )
-                emit( curr_fn, "jsvalue", "dup", { c->arg1 }, { c->target } );
+                emit( curr_fn, "jsvalue", "copy", { c->arg1 }, { c->target } );
 
             else if ( auto* dd = std::get_if< lin::dup_data >( &i.data ) )
                 emit( curr_fn, "jsvalue", "dup", { dd->arg1 }, { dd->first, dd->second } );
+
+            else if ( auto* dr = std::get_if< lin::drop_data >( &i.data ) )
+                emit( curr_fn, "jsvalue", "drop", {}, { dr->target } );
+
             else if ( auto* id = std::get_if< lin::if_data >( &i.data ) )
             {
                 std::string cmp1 = fresh_val( "cmp" );
@@ -114,14 +161,17 @@ struct structure_builder
                 std::string then_name = fresh_val( "then" );
                 std::string else_name = fresh_val( "else" );
                 std::string frame_name = fresh_val( "frame" );
-                
-                
-                std::vector< uint32_t > free_vars = ordered_free_vars( id->then_body, id->else_body );
-                // free vars should be parameters of these procedures 
+                                
                 lower_fn( then_name, id->then_body );
                 lower_fn( else_name, id->else_body );
 
-                std::string fsig = call_signature_name( free_vars.size() );
+                std::vector< std::string > params = vals2str( id->params );
+                std::string fsig = call_signature_name( params.size() );
+
+                curr_struct->functions[ then_name ].in = params;
+                curr_struct->functions[ else_name ].in = params;
+                cthu::function frame_fn = create_frame( params, fsig );
+                curr_struct->functions[ frame_name ] = std::move( frame_fn );
 
                 emit( curr_fn, struct_name, "", { then_name }, { then_name } );
                 emit( curr_fn, struct_name, "", { else_name }, { else_name } );
@@ -129,13 +179,13 @@ struct structure_builder
                 std::string alt1_name = fresh_val( "alt" );
                 std::string alt2_name = fresh_val( "alt" );
                 emit( curr_fn, fsig, "opt", { cmp1, then_name }, { alt1_name } );
-                emit( curr_fn, fsig, "opt", { cmp3, else_name}, { alt2_name } );
+                emit( curr_fn, fsig, "opt", { cmp3, else_name }, { alt2_name } );
 
                 std::string cont = fresh_val( "cont" );
                 emit( curr_fn, fsig, "join", { alt1_name, alt2_name, frame_name }, { cont } );
 
-                // todo: pass free_vars as arguments...
-                // emit( curr_fn, fsig, "call", { cont } { })
+                // TODO: how to emit the call ? 
+                // emit( curr_fn, fsig, "call", { cont } { } )
             }
 
             // todo: we should probably stop codegen of curr_fn after hitting return because everything that follows is dead code,
@@ -146,7 +196,7 @@ struct structure_builder
                 if ( r->arg )
                     emit( curr_fn, "jsvalue", "move", args2str( { r->arg.value() } ), { "out" } );
             }
-
+            else if ( auto* dr = std::get_if< lin::drop_data >( &i.data ) ) {}
             else if ( auto* c = std::get_if< lin::call_data >( &i.data ) ) {}
             else if ( auto* l = std::get_if< lin::loop_data >( &i.data ) ) {}
             else if ( std::get_if< lin::brk_data >( &i.data ) ) {}
