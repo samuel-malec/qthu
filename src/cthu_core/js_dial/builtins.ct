@@ -1,4 +1,4 @@
-structure jsvalue : arithmetic[ jsvalue, stck, bool ], tagged[ jsvalue, bool ], boxed[ jsvalue, num ]
+structure jsvalue : arithmetic[ jsvalue, stck, bool ]
 (
     dup    = qjs_val_dup
     drop   = qjs_val_drop

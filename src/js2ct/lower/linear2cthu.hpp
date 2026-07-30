@@ -184,8 +184,8 @@ struct structure_builder
                 std::string cont = fresh_val( "cont" );
                 emit( curr_fn, fsig, "join", { alt1_name, alt2_name, frame_name }, { cont } );
 
-                // TODO: how to emit the call ? 
-                // emit( curr_fn, fsig, "call", { cont } { } )
+                // how to emit the call
+                emit( curr_fn, fsig, "call", { cont } { } )
             }
 
             // todo: we should probably stop codegen of curr_fn after hitting return because everything that follows is dead code,

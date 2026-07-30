@@ -51,23 +51,7 @@ signature arithmetic[ T, S, B ] : simple[ T, S, B ]
     cons ∷ ∅ → T ; we should be able to create cons instructions on demand
 )
 
-signature tagged[ T, B ]
-(
-    tag_of ∷ T → tag
-    num?   ∷ T → B
-    bool?  ∷ T → B
-    str?   ∷ T → B
-    obj?   ∷ T → B
-    undef? ∷ T → B
-)
-
-signature boxed[ T, U ]
-(
-    box   ∷ U → T
-    unbox ∷ T → U
-)
-
-; base signature for functions (although this will most likely have to change once we support first-class functions)
+; base signature for functions ( although this will most likely have to change once we support first-class functions )
 signature f₁¹[ F, S, B, I, O ] : simple[ F, S, B ]
 (
     call ∷ F × I → O
