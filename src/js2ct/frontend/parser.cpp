@@ -207,7 +207,6 @@ namespace qthu::js2ct
         return e;
     }
 
-    // TODO: distinguish between binary and relational nodes in the ast ( or postpone it to HIR lowering... )
     std::optional< ast::expr > parser::parse_comparison()
     {
         auto e = parse_shift();

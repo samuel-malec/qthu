@@ -19,8 +19,8 @@ struct compiler
 {
     void run( const config& conf )
     {
-        std::string in_name = conf.in_path;
-        std::string out_name = conf.out_path;
+        std::string in_name = conf.file_in;
+        std::string out_name = conf.file_out;
 
         source_ptr doc = std::make_shared< source_file >( in_name, read_file( in_name ) );
 
@@ -33,24 +33,21 @@ struct compiler
         sema::analyzer analyzer;
         auto semantics = analyzer.run( ast );
 
-        std::cout << "lowering to hir\n";
         hir::lowerer hir_lowerer{ semantics };
         hir::module hir = hir_lowerer.lower( ast );
         if ( conf.emit_hir )
             printer.print_hir( std::cout, hir, semantics );
         
-        std::cout << "lowering to linear\n";
         lin::lowerer lin_lowerer{ semantics };
         lin::program linear = lin_lowerer.lower( hir );
         if ( conf.emit_lin )
             printer.print_lin_program( std::cout, linear );
 
-        std::cout << "lowering to cthu\n";
         cthu::lowerer cthu_lowerer{};
         cthu::module ct = cthu_lowerer.lower( linear );
-        std::ofstream out( conf.out_path );
+        std::ofstream out( conf.file_out );
         if ( !out.is_open() )
-            throw std::runtime_error( "Couldn't open file at: " + conf.out_path );
+            throw std::runtime_error( "Couldn't open file at: " + conf.file_out );
         
         printer.print_cthu( out, ct );
     }

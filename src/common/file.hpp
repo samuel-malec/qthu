@@ -26,7 +26,7 @@ inline std::string read_file( std::string path )
     std::ifstream file( path, std::ios::in );
     if ( !file.is_open() )
         throw std::runtime_error( "Couldn't open file at: " + path );
-
+    
     std::stringstream sstream;
     sstream << file.rdbuf();
     return sstream.str();
