@@ -302,8 +302,37 @@ void pretty_printer::print_lin_instr( std::ostream& out, const lin::instr& i, in
     {
         out << "[ loop ]\n";
 
+        pad( out, depth + 1 );
+        out << "[ cond ]\n";
+        for ( auto& instr : l->cond_body )
+            print_lin_instr( out, instr, depth + 2 );
+        pad( out, depth + 1 );
+        out << "[ condition value ] ";
+        print_lin_argument( out, l->cond );
+        out << '\n';
+
+        pad( out, depth + 1 );
+        out << "[ dispatch args ] ";
+        for ( auto& v : l->dispatch_args )
+        {
+            print_lin_value( out, v );
+            out << ' ';
+        }
+        out << '\n';
+
+        pad( out, depth + 1 );
+        out << "[ body ]\n";
         for ( auto& instr : l->body )
-            print_lin_instr( out, instr, depth + 1 );
+            print_lin_instr( out, instr, depth + 2 );
+
+        pad( out, depth + 1 );
+        out << "[ outputs ] ";
+        for ( auto& v : l->outputs )
+        {
+            print_lin_value( out, v );
+            out << ' ';
+        }
+        out << '\n';
     }
     else if ( std::get_if< lin::brk_data >( &i.data ) )
     {
@@ -348,14 +377,6 @@ bool is_empty_block( hir::function& fn, hir::stmt_id s )
 {
     const auto* block = std::get_if< hir::stmt::block >( &fn.get( s ).data );
     return block && block->stmts.empty();
-}
-
-inline std::string function_name( sema::analysis_result& sema, sema::function_id fid )
-{
-    for ( auto& sym : sema.declarations )
-        if ( sym.kind == sema::symbol::kind_t::function && sym.function && sym.function->value == fid.value )
-            return sema.names.at( sym.name.value );
-    return "<script>"; // the implicit top-level function has no declaring symbol
 }
 
 void pretty_printer::print_hir_expr( std::ostream& out, hir::function& fn, hir::expr_id e, int depth )
@@ -494,13 +515,13 @@ void pretty_printer::print_hir_stmt( std::ostream& out, hir::function& fn, hir::
 
 void pretty_printer::print_hir_function( std::ostream& out, hir::function& fn, sema::analysis_result& semantics )
 {
-    out << function_name( semantics, fn.id ) << " :: params: ( ";
+    out << semantics.function_name( fn.id ) << " :: params: ( ";
     for ( size_t i = 0; i < fn.parameters.size(); ++i )
         out << "v" << fn.parameters[ i ].value << ( i + 1 == fn.parameters.size() ? "" : ", " );
     out << " )";
 
     if ( fn.lexical_parent )
-        out << "  parent: " << function_name( semantics, *fn.lexical_parent );
+        out << "  parent: " << semantics.function_name( *fn.lexical_parent );
 
     if ( !fn.captures.empty() )
     {

@@ -1,3 +1,4 @@
+; todo: this will probably have to change once we design memory model and local variables
 structure fib
 (
     rec = λ a b i → out

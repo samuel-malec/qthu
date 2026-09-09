@@ -43,7 +43,7 @@ struct compiler
         if ( conf.emit_lin )
             printer.print_lin_program( std::cout, linear );
 
-        cthu::lowerer cthu_lowerer{};
+        cthu::lowerer cthu_lowerer{ semantics };
         cthu::module ct = cthu_lowerer.lower( linear );
         std::ofstream out( conf.file_out );
         if ( !out.is_open() )

@@ -5,7 +5,7 @@ This repository implements the compiler toolchain for the JavaScript dialect of 
 
 Currently, two compilers are being implemented:
 - **js2ct** - compiles Javascript into Cthulhu
-- **cthuc** - lowers Cthulhu into QuickJS bytecode
+- **ct2qjs** - lowers Cthulhu into QuickJS bytecode
 
 ```text
 JavaScript
@@ -17,7 +17,7 @@ JavaScript
 Cthulhu IR
      │
      ▼
-   cthuc
+   ct2qjs
      │
      ▼
 QuickJS Bytecode
@@ -29,7 +29,7 @@ src/
 ├── asm/         # Low-level assembly IR used for QuickJS bytecode emission
 ├── bytecode/    # QuickJS bytecode definitions and utilities
 ├── common/      # Shared utilities and infrastructure
-├── cthuc/       # Cthulhu → QuickJS compiler
+├── ct2qjs/      # Cthulhu → QuickJS compiler
 ├── cthu_core/   # Core definitions for the Cthulhu JavaScript dialect
 ├── js2ct/       # JavaScript → Cthulhu compiler
 ```

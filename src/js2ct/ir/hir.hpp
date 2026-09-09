@@ -42,7 +42,7 @@ struct stmt
     struct block      { std::vector< stmt_id > stmts; };
     struct let_stmt   { type typ; sema::binding_id target; std::optional< expr_id > value; };
     struct if_stmt    { expr_id cond; stmt_id then_branch; std::optional< stmt_id > else_branch; };
-    struct loop_stmt  { stmt_id body; };
+    struct loop_stmt  { expr_id cond; stmt_id body; };
     struct ret_stmt   { std::optional< expr_id > value; };
     struct brk        {};
     struct cont       {};
