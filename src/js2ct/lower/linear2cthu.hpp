@@ -67,7 +67,7 @@ struct structure_builder
             case SUB:   return "sub";
             case MUL:   return "mul";
             case DIV:   return "div";
-            case MOD:   return "mod";
+            case MOD:   return "rem";
             case EQ:    return "eq?";
             case NEQ:   return "ne?";
             case LT:    return "lt?";
