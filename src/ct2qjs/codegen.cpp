@@ -225,6 +225,17 @@ namespace qthu::ct2qjs
             return;
         }
 
+        if ( name == "qjs_val_cons_str" )
+        {
+            if ( !insn.resolved.literal )
+                throw std::runtime_error( "qjs_val_cons_str requires a string literal operand" );
+
+            uint32_t atom_index = register_atom( *insn.resolved.literal );
+            builder.add_instr( qthu::as::push_atom_value_( static_cast< int32_t >( atom_index ) ) );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
         if ( name == "qjs_val_get" )
         {
             binary_insn( insn, qthu::as::get_array_el_() );

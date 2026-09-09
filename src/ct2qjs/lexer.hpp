@@ -33,7 +33,7 @@ namespace qthu::ct2qjs
     {
         enum cat_t { invalid, comment,
                      lambda, kw_struct, kw_sig, kw_type, kw, eol, punct,
-                     ident, arrow, bracket, paren } cat = invalid;
+                     ident, arrow, bracket, paren, str } cat = invalid;
 
         location loc;
         std::string_view data;
@@ -61,6 +61,7 @@ namespace qthu::ct2qjs
             case token::arrow:       return stream << "arrow";
             case token::bracket:     return stream << "bracket";
             case token::paren:       return stream << "paren";
+            case token::str:         return stream << "str";
         }
         return stream << "unknown";
     }

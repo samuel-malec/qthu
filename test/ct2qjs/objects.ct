@@ -41,5 +41,33 @@ structure main
         jsvalue cons_42 → expect2
         jsvalue eq? v2 expect2 → ok2
         jsvalue assert ok2
+
+        ; --- string-keyed access (obj.length-shaped, via cons_str) ---
+        jsvalue cons_obj → s0
+        jsvalue cons_str "length" → skey
+        jsvalue cons_5           → sval
+        jsvalue set s0 skey sval → s1      ; s1 = { length: 5 }
+
+        jsvalue cons_str "length" → skey2
+        jsvalue get s1 skey2 → v3          ; v3 = s1["length"] = 5
+
+        jsvalue cons_5 → expect3
+        jsvalue eq? v3 expect3 → ok3
+        jsvalue assert ok3
+
+        ; different string content must resolve to a genuinely different
+        ; key, not just "any cons_str works"
+        jsvalue cons_obj → s2
+        jsvalue cons_str "alpha" → akey
+        jsvalue cons_9           → aval
+        jsvalue set s2 akey aval → s3      ; s3 = { alpha: 9 }
+
+        jsvalue cons_str "beta" → bkey
+        jsvalue get s3 bkey → v4           ; v4 = s3["beta"] -- never set
+
+        jsvalue cons_9 → nine
+        jsvalue eq? v4 nine → same
+        jsvalue not same → ok4
+        jsvalue assert ok4
     )
 )

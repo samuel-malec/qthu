@@ -63,6 +63,12 @@ struct program
 {
     std::vector< function_bytecode > functions;
 
+    // String literals referenced by qjs_val_cons_str (via push_atom_value).
+    // Serialized into the file-level atom table right after function names,
+    // so their runtime atom index is JS_ATOM_END + functions.size() + i --
+    // see codegen.hpp's register_atom for where that index is computed.
+    std::vector< std::string > custom_atoms;
+
     static uint8_t pack_vardef_flags( const vardef& vd )
     {
         uint8_t f = 0;
@@ -176,9 +182,11 @@ struct program
         result.push_back( 0x05 ); // Bytecode format version
  
         std::vector< std::string > atoms;
-        atoms.reserve( functions.size() );
+        atoms.reserve( functions.size() + custom_atoms.size() );
         for ( const auto& func : functions )
             atoms.push_back( func.name );
+        for ( const auto& s : custom_atoms )
+            atoms.push_back( s );
 
         encode_leb128_u( result, static_cast< uint32_t >( atoms.size() ) );
         for ( const auto& atom : atoms )
