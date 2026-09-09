@@ -69,9 +69,11 @@ struct structure_builder
             case DIV:   return "div";
             case MOD:   return "mod";
             case EQ:    return "eq?";
+            case NEQ:   return "ne?";
             case LT:    return "lt?";
             case LEQ:   return "le?";
             case GT:    return "gt?";
+            case GEQ:   return "ge?";
             default:
                 assert( false && "unimplemented" );
         }
