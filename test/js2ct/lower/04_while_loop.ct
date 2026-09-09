@@ -9,43 +9,53 @@
 ; A loop is recursion where the "recursive call" targets the same closure.
 ; loop_0 plays fib.ct's `loop` role (the dispatcher); body_0 plays `rec`
 ; (keep looping -- tail-calls back into `sumTo loop_0`, i.e. itself, by
-; name); base_0 plays `base` (loop exit). No cthuc changes needed: fn_ref
+; name); exit_0 plays `base` (loop exit). No cthuc changes needed: fn_ref
 ; resolution just looks a name up in the symbol table, which already
 ; contains this structure's own functions.
+;
+; A call can only ever propagate ONE output (QuickJS functions return a
+; single value), so every name still live when the loop is entered -- n, i
+; and s, not just the ones read after the loop -- travels as a single
+; packed array: cons_arr/set before each call, dup/get after. n and i are
+; dead once the loop exits, so run() just drops them post-unpack.
 
 structure sumTo
 (
-    body_0 = λ n i s → out
+    body_0 = λ n i s → packed
     (
         jsvalue dup i     → i1 i2
         jsvalue add s i1  → s2
 
-        jsvalue cons_1    → one
+        jsvalue cons_1     → one
         jsvalue add i2 one → i2next
 
-        sumTo loop_0                → cont
-        f_iii_i call cont n i2next s2 → out
+        sumTo loop_0                 → cont
+        f_j3_j call cont n i2next s2 → packed
     )
 
-    base_0 = λ n i s → out
+    exit_0 = λ n i s → packed
     (
-        jsvalue drop n
-        jsvalue drop i
-        jsvalue move s → out
+        jsvalue cons_arr → p0
+        jsvalue cons_0   → k0
+        jsvalue set p0 k0 n → p1
+        jsvalue cons_1   → k1
+        jsvalue set p1 k1 i → p2
+        jsvalue cons_2   → k2
+        jsvalue set p2 k2 s → packed
     )
 
-    frame_0 = λ A B n i s → out
+    frame_0 = λ A B n i s → packed
     (
         jsvalue dup n → n1 n2
         jsvalue dup i → i1 i2
         jsvalue dup s → s1 s2
 
-        f_iii_i call A n1 i1 s1 → out1
-        f_iii_i call B n2 i2 s2 → out2
-        jsvalue join out1 out2  → out
+        f_j3_j call A n1 i1 s1 → p1
+        f_j3_j call B n2 i2 s2 → p2
+        jsvalue join p1 p2     → packed
     )
 
-    loop_0 = λ n i s → out
+    loop_0 = λ n i s → packed
     (
         jsvalue dup n     → n1 n2
         jsvalue dup i     → i1 i2
@@ -55,14 +65,14 @@ structure sumTo
         jsvalue not cmp2 → cmp3
 
         sumTo body_0  → body_ref
-        sumTo base_0  → base_ref
+        sumTo exit_0  → exit_ref
         sumTo frame_0 → frame
 
-        f_iii_i opt cmp1 body_ref → alt1
-        f_iii_i opt cmp3 base_ref → alt2
-        f_iii_i join alt1 alt2 frame → cont
+        f_j3_j opt cmp1 body_ref → alt1
+        f_j3_j opt cmp3 exit_ref → alt2
+        f_j3_j join alt1 alt2 frame → cont
 
-        f_iii_i call cont n2 i2 s → out
+        f_j3_j call cont n2 i2 s → packed
     )
 
     run = λ n → out
@@ -70,8 +80,21 @@ structure sumTo
         jsvalue cons_0 → i0
         jsvalue cons_0 → s0
 
-        sumTo loop_0                 → cont
-        f_iii_i call cont n i0 s0    → out
+        sumTo loop_0             → cont
+        f_j3_j call cont n i0 s0 → packed
+
+        jsvalue dup packed → u1 u2
+        jsvalue cons_0     → uk0
+        jsvalue get u1 uk0 → r_n
+        jsvalue dup u2     → u3 u4
+        jsvalue cons_1     → uk1
+        jsvalue get u3 uk1 → r_i
+        jsvalue cons_2     → uk2
+        jsvalue get u4 uk2 → r_s
+
+        jsvalue drop r_n
+        jsvalue drop r_i
+        jsvalue move r_s → out
     )
 )
 
@@ -82,7 +105,7 @@ structure main
         jsvalue cons_5 → n
 
         sumTo run          → prog
-        f_i_i call prog n  → result
+        f_j_j call prog n  → result
 
         jsvalue cons_10           → expect  ; 0+1+2+3+4
         jsvalue eq? result expect → ok
