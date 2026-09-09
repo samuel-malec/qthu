@@ -236,6 +236,14 @@ namespace qthu::ct2qjs
             return;
         }
 
+        if ( name == "qjs_val_bnot" )
+        {
+            get1( insn );
+            builder.add_instr( qthu::as::not_() );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
         if ( name == "qjs_val_and" )
         {
             binary_insn( insn, qthu::as::and_() );
