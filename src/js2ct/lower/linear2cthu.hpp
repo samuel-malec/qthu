@@ -130,7 +130,7 @@ struct structure_builder
                 if ( auto* int_val = std::get_if< uint64_t >( &cd->c ) )
                     emit( curr_fn, "jsvalue", "cons_" + std::to_string( *int_val ), {}, { cd->target } );
                 else
-                    emit( curr_fn, "jsvalue", "cons_" + std::get< bool >( cd->c ) ? "true" : "false", {}, { cd->target } );
+                    emit( curr_fn, "jsvalue", "cons_" + std::string( std::get< bool >( cd->c ) ? "true" : "false" ), {}, { cd->target } );
             }
 
             else if ( auto* u = std::get_if< lin::unary_data >( &i.data ) )
