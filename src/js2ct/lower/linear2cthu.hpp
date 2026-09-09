@@ -12,6 +12,7 @@ struct structure_builder
 {
     std::string struct_name;
     lin::function& fn;
+    sema::analysis_result& sema;
     cthu::structure* curr_struct = nullptr;
     uint32_t next_val = 1;
 
@@ -203,7 +204,19 @@ struct structure_builder
                     emit( curr_fn, "jsvalue", "move", args2str( { r->arg.value() } ), { "out" } );
             }
             else if ( auto* dr = std::get_if< lin::drop_data >( &i.data ) ) {}
-            else if ( auto* c = std::get_if< lin::call_data >( &i.data ) ) {}
+            else if ( auto* c = std::get_if< lin::call_data >( &i.data ) )
+            {
+                std::string callee_struct = sema.function_name( c->callee );
+                std::string f_ref = fresh_val( "f_ref" );
+                emit( curr_fn, callee_struct, "run", {}, { f_ref } );
+
+                std::string fsig = call_signature_name( c->args.size() );
+                std::vector< std::string > call_args{ f_ref };
+                for ( auto& a : args2str( c->args ) )
+                    call_args.push_back( std::move( a ) );
+
+                emit( curr_fn, fsig, "call", call_args, vals2str( { c->target } ) );
+            }
             else if ( auto* l = std::get_if< lin::loop_data >( &i.data ) ) {}
             else if ( std::get_if< lin::brk_data >( &i.data ) ) {}
             else if ( std::get_if< lin::cont_data >( &i.data ) ) {}
@@ -234,7 +247,7 @@ struct lowerer
         for ( int i = 0; i < prog.functions.size(); ++i )
         {
             std::string struct_name = i == 0 ? "main" : sema.function_name( prog.functions[ i ].name );
-            structure_builder sb{ struct_name, prog.functions[ i ] };
+            structure_builder sb{ struct_name, prog.functions[ i ], sema };
             mod.structures.push_back( std::move( sb.lower() ) );
         }
         return mod;
