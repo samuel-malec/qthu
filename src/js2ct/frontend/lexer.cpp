@@ -37,6 +37,23 @@ void lexer::next()
         return;
     }
 
+    // string literal (no escape-sequence support, matching ct2qjs's lexer)
+    if ( sv[ 0 ] == '"' )
+    {
+        int end = 1;
+        while ( end < sv.size() && sv[ end ] != '"' )
+            ++end;
+
+        if ( end >= sv.size() )
+            throw std::runtime_error( std::format(
+                "unterminated string literal at file: '{}', Ln {}, Col {}",
+                loc.doc->name, loc.line, loc.col ) );
+
+        out.push( token{ loc, sv.substr( 1, end - 1 ), cat::str } );
+        ptr = end + 1;
+        return;
+    }
+
     // keyword
     auto word = shift_word();
     if ( keywords.contains( word ) )
