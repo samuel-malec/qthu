@@ -61,6 +61,12 @@ namespace qthu::js2ct
             return ast::expr{ .loc = t->loc, .data = ast::bool_lit{ value } };
         }
 
+        if ( match( cat::str ) )
+        {
+            auto tok = fetch();
+            return ast::expr{ .loc = tok.loc, .data = ast::str_lit{ tok.data } };
+        }
+
         if ( match( cat::ident ) )
         {
             auto tok = fetch();

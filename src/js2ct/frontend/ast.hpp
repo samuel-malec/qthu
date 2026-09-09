@@ -25,9 +25,14 @@ struct int_lit
     std::uint64_t value; 
 };
 
-struct bool_lit   
+struct bool_lit
 {
     bool value;
+};
+
+struct str_lit
+{
+    std::string_view value;
 };
 
 struct var        
@@ -67,6 +72,7 @@ struct expr
     std::variant<
         int_lit,
         bool_lit,
+        str_lit,
         var,
         unary,
         binary,

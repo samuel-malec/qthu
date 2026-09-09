@@ -71,6 +71,9 @@ struct lowerer
             res.data = expr::call{ .target = fid, .args = std::move( args ) };
         }
 
+        else
+            assert( false && "unimplemented ast::expr kind in lower_expr" );
+
         return append_expr( fc, std::move( res ) );
     }
 
