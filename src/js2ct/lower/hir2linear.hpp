@@ -111,7 +111,6 @@ struct hir_to_linear
 
         else if ( auto* c = std::get_if< hir::expr::call >( &node.data ) )
         {
-            assert( false && "unimplemented" );
             std::vector< lin::argument > args;
 
             for ( auto arg : c->args )
