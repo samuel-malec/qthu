@@ -24,8 +24,8 @@ structure abs
     frame_0 = λ A B x → out
     (
         jsvalue dup x       → x1 x2
-        f_i_i call A x1     → out1
-        f_i_i call B x2     → out2
+        f_j_j call A x1     → out1
+        f_j_j call B x2     → out2
         jsvalue join out1 out2 → out
     )
 
@@ -41,11 +41,11 @@ structure abs
         abs else_0  → else_ref
         abs frame_0 → frame
 
-        f_i_i opt cmp1 then_ref → alt1
-        f_i_i opt cmp3 else_ref → alt2
-        f_i_i join alt1 alt2 frame → cont
+        f_j_j opt cmp1 then_ref → alt1
+        f_j_j opt cmp3 else_ref → alt2
+        f_j_j join alt1 alt2 frame → cont
 
-        f_i_i call cont x2 → out
+        f_j_j call cont x2 → out
     )
 )
 
@@ -58,7 +58,7 @@ structure main
         jsvalue sub zero seven → neg7
 
         abs run           → abs_ref
-        f_i_i call abs_ref neg7 → result
+        f_j_j call abs_ref neg7 → result
 
         jsvalue cons_7            → expect
         jsvalue eq? result expect → ok

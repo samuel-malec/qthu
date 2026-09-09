@@ -279,7 +279,9 @@ namespace qthu::ct2qjs
             insn.structure = prog.get( s.data );
             insn.operation = prog.get( o.data );
 
-            if ( auto err = read_ident_list( insn.in, get_atom(), "" ) )
+            if ( peek( token::str ) )
+                insn.literal = std::string( fetch().data );
+            else if ( auto err = read_ident_list( insn.in, get_atom(), "" ) )
                 return err;
 
             if ( peek( token::arrow ) )
@@ -292,7 +294,7 @@ namespace qthu::ct2qjs
                     return error( o, "operation must have at least one output parameter after →" );
             }
 
-            else if ( insn.in.empty() )
+            else if ( insn.in.empty() && !insn.literal )
                 return error( o, "operation must have at least one input or output parameter" );
 
             if ( auto err = require( token::eol ) )

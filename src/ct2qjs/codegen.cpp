@@ -96,17 +96,61 @@ namespace qthu::ct2qjs
             return;
         }
 
+        // push :: stack(array) x value -> stack. A "stack" is just a
+        // jsvalue array (same representation cons_arr/get/set already use);
+        // arr[arr.length] = value is a normal JS array-growing write, so
+        // put_array_el_() already extends the length -- no atom/.length
+        // work needed here (that's only needed on the shrinking side, pop).
         if ( name == "qjs_val_push" )
         {
-            std::cout << name << '\n';
-            std::cout << "not implemented\n";
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );  // survivor, returned as the new stack
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );  // consumed by get_length_
+            builder.add_instr( qthu::as::get_length_() );
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 1 ] ) );
+            builder.add_instr( qthu::as::put_array_el_() );
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
             return;
         }
 
+        // pop :: stack(array) -> value x stack. Fetches arr[length-1], then
+        // truncates via arr.length = length-1 -- writing JS_ATOM_length on
+        // an array-class object routes through QuickJS's set_array_length()
+        // (quickjs.c), which actually frees the now out-of-range element,
+        // unlike a plain indexed write/delete would. slots_out order
+        // matches prelude.ct's `pop :: S -> T x S` (value, then stack).
+        //
+        // Both put_loc_(slots_out[...]) are deferred to the very end, after
+        // every get_loc_(slots_in[0]) read: aloc_slots() frees an
+        // instruction's input slots before allocating its outputs, so
+        // slots_out[0] can alias slots_in[0] -- writing it early would
+        // silently overwrite the array reference underneath every
+        // subsequent read of it in this same case.
         if ( name == "qjs_val_pop" )
         {
-            std::cout << name << '\n';
-            std::cout << "not implemented\n";
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );
+            builder.add_instr( qthu::as::get_length_() );
+            builder.add_instr( qthu::as::push_i32_( 1 ) );
+            builder.add_instr( qthu::as::sub_() );
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );
+            builder.add_instr( qthu::as::swap_() );
+            builder.add_instr( qthu::as::get_array_el_() );
+            // stack: [ value ]
+
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );
+            builder.add_instr( qthu::as::get_length_() );
+            builder.add_instr( qthu::as::push_i32_( 1 ) );
+            builder.add_instr( qthu::as::sub_() );
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );
+            builder.add_instr( qthu::as::swap_() );
+            builder.add_instr( qthu::as::put_field_( static_cast< int32_t >( js_atom_length ) ) );
+            // stack: [ value ]  (put_field consumed obj+value, pushed nothing)
+
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );
+            // stack: [ value, array ]
+
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 1 ] ) );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
             return;
         }
 
@@ -207,6 +251,53 @@ namespace qthu::ct2qjs
         {
             get2( insn );
             builder.add_instr( qthu::as::shr_() );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
+        if ( name == "qjs_val_cons_obj" )
+        {
+            builder.add_instr( qthu::as::object_() );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
+        if ( name == "qjs_val_cons_arr" )
+        {
+            builder.add_instr( qthu::as::array_from_( 0 ) );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
+        if ( name == "qjs_val_cons_str" )
+        {
+            if ( !insn.resolved.literal )
+                throw std::runtime_error( "qjs_val_cons_str requires a string literal operand" );
+
+            uint32_t atom_index = register_atom( *insn.resolved.literal );
+            builder.add_instr( qthu::as::push_atom_value_( static_cast< int32_t >( atom_index ) ) );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
+        if ( name == "qjs_val_get" )
+        {
+            binary_insn( insn, qthu::as::get_array_el_() );
+            return;
+        }
+
+        if ( name == "qjs_val_set" )
+        {
+            // set: (obj, key, value) -> obj. put_array_el is consuming (obj
+            // key value -> nothing), and doesn't hand the object back --
+            // JS's `obj[k] = v` evaluates to v, not obj. So this isn't a
+            // single opcode: dup the object, feed one copy to the store,
+            // and put_loc the surviving copy as the result.
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );
+            builder.add_instr( qthu::as::dup_() );
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 1 ] ) );
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 2 ] ) );
+            builder.add_instr( qthu::as::put_array_el_() );
             builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
             return;
         }

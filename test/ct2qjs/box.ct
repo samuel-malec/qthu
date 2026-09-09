@@ -1,0 +1,59 @@
+; JS:
+;   function makeBox() {
+;       let b = {};
+;       let items = [];
+;       items[0] = 100;
+;       items[1] = 200;
+;       b.items = items;
+;       return b;
+;   }
+;   function main() {
+;       let b = makeBox();
+;       let items = b.items;
+;       return items[0] + items[1];
+;   }
+
+structure makeBox
+(
+    run = λ → out
+    (
+        jsvalue cons_arr → items0
+        jsvalue cons_0   → k0
+        jsvalue cons_100 → v0
+        jsvalue set items0 k0 v0 → items1
+
+        jsvalue cons_1   → k1
+        jsvalue cons_200 → v1
+        jsvalue set items1 k1 v1 → items2
+
+        jsvalue cons_obj → b0
+        jsvalue cons_str "items" → key
+        jsvalue set b0 key items2 → b1
+
+        jsvalue move b1 → out
+    )
+)
+
+structure main
+(
+    run = λ
+    (
+        makeBox run      → mkref
+        f__j call mkref  → b0
+
+        jsvalue cons_str "items" → key
+        jsvalue get b0 key → items
+
+        jsvalue dup items → items1 items2
+        jsvalue cons_0 → k0
+        jsvalue get items1 k0 → v0
+
+        jsvalue cons_1 → k1
+        jsvalue get items2 k1 → v1
+
+        jsvalue add v0 v1 → total
+        jsvalue cons_300 → expect
+        jsvalue eq? total expect → ok
+        jsvalue assert ok
+    )
+)

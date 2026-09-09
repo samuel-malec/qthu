@@ -1,0 +1,143 @@
+; JS:
+;   function makeCounter() {
+;       let c = {};
+;       c.count = 0;
+;       return c;
+;   }
+;   function incrementBy(c, n) {
+;       let i = 0;
+;       while (i < n) {
+;           c.count = c.count + 1;
+;           i = i + 1;
+;       }
+;       return c;
+;   }
+;   function main() {
+;       let c = makeCounter();
+;       c = incrementBy(c, 5);
+;       return c.count;
+;   }
+;
+; A call can only ever propagate ONE output (QuickJS functions return a
+; single value), so the loop's live bindings (c, n, i) travel together as a
+; single packed array -- cons_arr/set before each call, dup/get after --
+; instead of as separate declared outputs.
+
+structure makeCounter
+(
+    run = λ → out
+    (
+        jsvalue cons_obj → c0
+        jsvalue cons_str "count" → key
+        jsvalue cons_0 → zero
+        jsvalue set c0 key zero → c1
+        jsvalue move c1 → out
+    )
+)
+
+structure incrementBy
+(
+    body_0 = λ c n i → packed
+    (
+        jsvalue dup c → c1 c2
+        jsvalue cons_str "count" → key1
+        jsvalue get c1 key1 → cnt
+
+        jsvalue cons_1 → one
+        jsvalue add cnt one → cnt2
+
+        jsvalue cons_str "count" → key2
+        jsvalue set c2 key2 cnt2 → c3
+
+        jsvalue dup i → i1 i2
+        jsvalue cons_1 → one2
+        jsvalue add i2 one2 → inext
+
+        incrementBy loop_0          → self
+        f_j3_j call self c3 n inext → packed
+    )
+
+    exit_0 = λ c n i → packed
+    (
+        jsvalue cons_arr → p0
+        jsvalue cons_0   → k0
+        jsvalue set p0 k0 c → p1
+        jsvalue cons_1   → k1
+        jsvalue set p1 k1 n → p2
+        jsvalue cons_2   → k2
+        jsvalue set p2 k2 i → packed
+    )
+
+    frame_0 = λ A B c n i → packed
+    (
+        jsvalue dup c → c_1 c_2
+        jsvalue dup n → n_1 n_2
+        jsvalue dup i → i_1 i_2
+
+        f_j3_j call A c_1 n_1 i_1 → p1
+        f_j3_j call B c_2 n_2 i_2 → p2
+        jsvalue join p1 p2         → packed
+    )
+
+    loop_0 = λ c n i → packed
+    (
+        jsvalue dup i → i1 i2
+        jsvalue dup n → n1 n2
+        jsvalue lt? i1 n1 → cmp
+
+        jsvalue dup cmp  → cmp1 cmp2
+        jsvalue not cmp2 → cmp3
+
+        incrementBy body_0  → body_ref
+        incrementBy exit_0  → exit_ref
+        incrementBy frame_0 → frame
+
+        f_j3_j opt cmp1 body_ref → alt1
+        f_j3_j opt cmp3 exit_ref → alt2
+        f_j3_j join alt1 alt2 frame → cont
+
+        f_j3_j call cont c n2 i2 → packed
+    )
+
+    run = λ c n → out
+    (
+        jsvalue cons_0 → i0
+
+        incrementBy loop_0     → cont
+        f_j3_j call cont c n i0 → packed
+
+        jsvalue dup packed → u1 u2
+        jsvalue cons_0     → uk0
+        jsvalue get u1 uk0 → r_c
+        jsvalue dup u2     → u3 u4
+        jsvalue cons_1     → uk1
+        jsvalue get u3 uk1 → r_n
+        jsvalue cons_2     → uk2
+        jsvalue get u4 uk2 → r_i
+
+        jsvalue drop r_n
+        jsvalue drop r_i
+        jsvalue move r_c → out
+    )
+)
+
+structure main
+(
+    run = λ
+    (
+        makeCounter run → mkref
+        f__j call mkref  → c0
+
+        jsvalue cons_5 → five
+
+        incrementBy run            → incref
+        f_jj_j call incref c0 five → c1
+
+        jsvalue cons_str "count" → key
+        jsvalue get c1 key → cnt
+
+        jsvalue cons_5 → expect
+        jsvalue eq? cnt expect → ok
+        jsvalue assert ok
+    )
+)

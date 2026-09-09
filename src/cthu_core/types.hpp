@@ -2,6 +2,8 @@
 
 #include <cstdint>
 #include <map>
+#include <optional>
+#include <string>
 #include <vector>
 
 namespace qthu::ct2qjs
@@ -44,6 +46,7 @@ struct insn_t
     atom operation;
     std::vector< atom > in;
     std::vector< atom > out;
+    std::optional< std::string > literal; // an inline string-literal operand, e.g. `cons_str "length" -> key`
 };
 
 struct function_t

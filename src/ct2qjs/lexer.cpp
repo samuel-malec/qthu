@@ -44,6 +44,24 @@ namespace qthu::ct2qjs
         if ( auto c = peek(); c <= 255 && ( std::isalpha( c ) || c == '%' ) )
             return start( cat::ident );
 
+        if ( peek() == '"' )
+        {
+            shift();
+            drop();
+
+            while ( !empty() && peek() != '"' )
+                shift();
+
+            if ( empty() )
+                throw std::runtime_error( std::format( "Unterminated string literal at line: {}, in column: {}", loc.line, loc.col ) );
+
+            push( cat::str );
+
+            shift();
+            drop();
+            return;
+        }
+
         if ( accept_any( U"[]", cat::bracket ) )
             return;
 

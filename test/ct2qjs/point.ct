@@ -1,0 +1,50 @@
+; JS:
+;   function makePoint(x, y) {
+;       let p = {};
+;       p.x = x;
+;       p.y = y;
+;       return p;
+;   }
+;   function main() {
+;       let p = makePoint(3, 4);
+;       return p.x + p.y;
+;   }
+
+structure makePoint
+(
+    run = λ x y → out
+    (
+        jsvalue cons_obj → p0
+        jsvalue cons_str "x" → kx
+        jsvalue set p0 kx x → p1
+
+        jsvalue cons_str "y" → ky
+        jsvalue set p1 ky y → p2
+
+        jsvalue move p2 → out
+    )
+)
+
+structure main
+(
+    run = λ
+    (
+        jsvalue cons_3 → three
+        jsvalue cons_4 → four
+
+        makePoint run          → mkref
+        f_jj_j call mkref three four → p
+
+        jsvalue dup p → p1 p2
+        jsvalue cons_str "x" → kx
+        jsvalue get p1 kx → xval
+
+        jsvalue cons_str "y" → ky
+        jsvalue get p2 ky → yval
+
+        jsvalue add xval yval → total
+        jsvalue cons_7 → expect
+        jsvalue eq? total expect → ok
+        jsvalue assert ok
+    )
+)

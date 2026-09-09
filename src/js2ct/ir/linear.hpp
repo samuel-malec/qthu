@@ -183,6 +183,7 @@ struct instr
 struct function
 {
     sema::function_id name;
+    std::vector< value > params;
     std::vector< instr > body;
 };
  

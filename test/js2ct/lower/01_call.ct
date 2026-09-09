@@ -16,7 +16,7 @@ structure main
     run = λ
     (
         five run           → five_ref
-        f__i call five_ref → result
+        f__j call five_ref → result
 
         jsvalue cons_5            → expect
         jsvalue eq? result expect → ok
