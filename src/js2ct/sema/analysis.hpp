@@ -130,6 +130,14 @@ struct analysis_result
     std::unordered_map< ast::expr*, binding_id > assign_bindings;
     std::unordered_map< ast::expr*, function_id > direct_calls;
     std::unordered_map< ast::stmt*, function_id > stmt_functions;
+
+    std::string function_name( function_id fid ) const
+    {
+        for ( auto& sym : declarations )
+            if ( sym.kind == symbol::kind_t::function && sym.function && sym.function->value == fid.value )
+                return names.at( sym.name.value );
+        return "<script>"; // the implicit top-level function has no declaring symbol
+    }
 };
 
 struct analyzer

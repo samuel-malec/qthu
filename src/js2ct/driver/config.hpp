@@ -27,18 +27,18 @@ inline void help()
               << "--emit-ast\n"
               << "--emit-hir\n"
               << "--emit-linir\n"
-              << "--emit-ct\n"; 
+              << "--emit-ct\n";
 }
 
 inline config parse_config( int argc, char* const* argv )
 {
     if ( argc < 1 )
         throw std::runtime_error( "Usage: ./js2ct file.js\n" );
-    
+
     if ( strcmp( argv[ 0 ], "-h" ) == 0 )
     {
         help();
-        exit( 0 ); 
+        exit( 0 );
     }
 
     std::string file_in = argv[ 0 ];
@@ -48,12 +48,12 @@ inline config parse_config( int argc, char* const* argv )
         throw std::runtime_error( "unsupported file format\n" );
 
     std::string file_out = path_obj.stem().string();
-    
+
     bool _emit_ast = false;
     bool _emit_cthu = false;
     bool _emit_hir = false;
     bool _emit_lin = false;
-    
+
     for ( int i = 1; i < argc; ++i )
     {
         if ( strcmp( argv[ i ], "-o" ) == 0 )
@@ -63,23 +63,24 @@ inline config parse_config( int argc, char* const* argv )
 
             ++i;
             file_out = argv[ i ];
+            continue;
         }
-        else if ( strcmp( argv[ i ], "--emit-ast" ) == 0 )
+        if ( strcmp( argv[ i ], "--emit-ast" ) == 0 )
         {
             _emit_ast = true;
             continue;
         }
-        else if ( strcmp( argv[ i ], "--emit-hir" ) == 0 )
+        if ( strcmp( argv[ i ], "--emit-hir" ) == 0 )
         {
             _emit_hir = true;
             continue;
         }
-        else if ( strcmp( argv[ i ], "--emit-linir" ) == 0 )
+        if ( strcmp( argv[ i ], "--emit-linir" ) == 0 )
         {
             _emit_lin = true;
             continue;
         }
-        else if ( strcmp( argv[ i ], "--emit-ct" ) == 0 )
+        if ( strcmp( argv[ i ], "--emit-ct" ) == 0 )
         {
             _emit_cthu = true;
             continue;
@@ -88,14 +89,12 @@ inline config parse_config( int argc, char* const* argv )
         throw std::runtime_error( "invalid flag" );
     }
 
-    return { 
-            .file_in = file_in,
-            .file_out = file_out,
-            .emit_ast = _emit_ast,
-            .emit_hir = _emit_hir,
-            .emit_cthu = _emit_cthu,
-            .emit_lin = _emit_lin
-        };
+    return { .file_in = file_in,
+             .file_out = file_out,
+             .emit_ast = _emit_ast,
+             .emit_hir = _emit_hir,
+             .emit_cthu = _emit_cthu,
+             .emit_lin = _emit_lin };
 }
 
-}
+} // namespace qthu::js2ct
