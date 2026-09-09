@@ -1,0 +1,45 @@
+structure main
+(
+    run = λ
+    (
+        ; --- array: cons_arr, chained set, dup-before-get reuse ---
+        jsvalue cons_arr → a0
+
+        jsvalue cons_0 → zero
+        jsvalue cons_5 → five
+        jsvalue set a0 zero five → a1      ; a1 = [5]
+
+        jsvalue cons_1 → one
+        jsvalue cons_7 → seven
+        jsvalue set a1 one seven → a2      ; a2 = [5, 7]
+
+        jsvalue dup a2 → a3 a4
+        jsvalue cons_0 → zero2
+        jsvalue get a3 zero2 → v0          ; v0 = a2[0] = 5
+
+        jsvalue cons_1 → one2
+        jsvalue get a4 one2 → v1           ; v1 = a2[1] = 7
+
+        jsvalue cons_5 → expect0
+        jsvalue eq? v0 expect0 → ok0
+        jsvalue assert ok0
+
+        jsvalue cons_7 → expect1
+        jsvalue eq? v1 expect1 → ok1
+        jsvalue assert ok1
+
+        ; --- object: cons_obj, same get/set with an integer key ---
+        jsvalue cons_obj → o0
+
+        jsvalue cons_0  → okey
+        jsvalue cons_42 → oval
+        jsvalue set o0 okey oval → o1      ; o1 = { 0: 42 }
+
+        jsvalue cons_0 → okey2
+        jsvalue get o1 okey2 → v2          ; v2 = o1[0] = 42
+
+        jsvalue cons_42 → expect2
+        jsvalue eq? v2 expect2 → ok2
+        jsvalue assert ok2
+    )
+)

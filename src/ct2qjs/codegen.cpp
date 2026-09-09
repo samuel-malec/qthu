@@ -211,6 +211,42 @@ namespace qthu::ct2qjs
             return;
         }
 
+        if ( name == "qjs_val_cons_obj" )
+        {
+            builder.add_instr( qthu::as::object_() );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
+        if ( name == "qjs_val_cons_arr" )
+        {
+            builder.add_instr( qthu::as::array_from_( 0 ) );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
+        if ( name == "qjs_val_get" )
+        {
+            binary_insn( insn, qthu::as::get_array_el_() );
+            return;
+        }
+
+        if ( name == "qjs_val_set" )
+        {
+            // set: (obj, key, value) -> obj. put_array_el is consuming (obj
+            // key value -> nothing), and doesn't hand the object back --
+            // JS's `obj[k] = v` evaluates to v, not obj. So this isn't a
+            // single opcode: dup the object, feed one copy to the store,
+            // and put_loc the surviving copy as the result.
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 0 ] ) );
+            builder.add_instr( qthu::as::dup_() );
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 1 ] ) );
+            builder.add_instr( qthu::as::get_loc_( insn.slots_in[ 2 ] ) );
+            builder.add_instr( qthu::as::put_array_el_() );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
         if ( name.starts_with( "qjs_val_cons_" ) )
         {
             size_t offset = 13; // length of 'qjs_val_cons_'
