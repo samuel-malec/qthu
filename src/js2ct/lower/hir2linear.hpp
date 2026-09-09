@@ -199,11 +199,75 @@ struct hir_to_linear
 
         else if ( auto* st = std::get_if< hir::stmt::loop_stmt >( &node.data ) )
         {
-            rename_env loop_env = env;
-            std::vector< lin::instr > loop_body;
-            lower_stmt( loop_body, loop_env, st->body );
-            sink.push_back( lin::instr{ lin::loop_data{ std::move( loop_body ) } } );
-            cleanup_env( loop_env, loop_body );
+            std::vector< sema::binding_id > live_bindings{};
+            std::vector< value > params{};
+            for ( auto& [ bid, val ] : env.scope )
+            {
+                live_bindings.push_back( sema::binding_id{ bid } );
+                params.push_back( val );
+            }
+
+            // cond is lowered into its own instruction stream (cond_body),
+            // separate from the loop's body, because it has to be
+            // re-evaluated fresh on *every* entry to the loop -- both the
+            // initial one and every recursive re-entry -- unlike if_stmt's
+            // cond, which only runs once. At the cthu level, cond_body
+            // becomes part of the self-recursive dispatcher function
+            // (loop_N), while body becomes the "keep looping" branch
+            // (loopbody_N) that tail-calls back into loop_N -- two SEPARATE
+            // cthu functions, each taking only `params` as input. So
+            // cond_body and body must each lower from their own independent
+            // copy of `env`, starting fresh from the loop's entry bindings:
+            // if they shared one threaded rename_env, body would end up
+            // referencing temporaries cond's evaluation produced (e.g. the
+            // "kept half" of a dup), which only exist inside loop_N's own
+            // locals, not loopbody_N's -- a cross-function reference that
+            // cthuc's slot allocator can't resolve.
+            rename_env cond_env = env;
+            std::vector< lin::instr > cond_body;
+            lin::argument condarg = lower_expr( cond_body, cond_env, st->cond );
+
+            // Whatever survives cond_body's dups (e.g. the "kept half" of a
+            // binding cond read) -- this is what the post-cond dispatch call
+            // has to use, since `params` itself (loop_N's *declared* input
+            // names) may already be partly consumed by cond_body at that
+            // point in loop_N's own instruction stream.
+            std::vector< value > dispatch_args{};
+            for ( auto& bid : live_bindings )
+                dispatch_args.push_back( cond_env.at( bid ) );
+
+            rename_env body_env = env;
+            std::vector< lin::instr > body;
+            lower_stmt( body, body_env, st->body );
+
+            // Deliberately not calling cleanup_env here: it unconditionally
+            // drops every scope entry (a known, separately-tracked bug --
+            // see CLAUDE.md), which would drop the very params the
+            // recursive tail-call at the cthu level needs to survive.
+            std::vector< value > next_params{};
+            for ( auto& bid : live_bindings )
+                next_params.push_back( body_env.at( bid ) );
+
+            // Every live binding gets a fresh id representing its value
+            // once the loop actually exits at runtime, and env is
+            // reassigned to it -- so code that follows the loop (e.g. a
+            // `return` reading a loop-mutated variable) sees the loop's
+            // result instead of the stale pre-loop value.
+            std::vector< value > outputs{};
+            for ( auto& bid : live_bindings )
+            {
+                value out = vn.fresh();
+                outputs.push_back( out );
+                env.reassign( bid, out );
+            }
+
+            sink.push_back( lin::instr{ lin::loop_data{ .cond_body = std::move( cond_body ),
+                                                          .cond = condarg,
+                                                          .dispatch_args = std::move( dispatch_args ),
+                                                          .body = std::move( body ),
+                                                          .params = std::move( params ),
+                                                          .next_params = std::move( next_params ),
+                                                          .outputs = std::move( outputs ) } } );
         }
 
         else if ( std::get_if< hir::stmt::brk >( &node.data ) )

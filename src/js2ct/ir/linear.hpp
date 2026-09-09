@@ -71,9 +71,20 @@ struct if_data
  
 struct loop_data
 {
-    std::vector< instr > body;
-    std::vector< value > params;
-    std::optional< value > result;
+    std::vector< instr > cond_body;      // re-run on *every* entry to the loop (initial call and every
+                                          // recursive re-entry alike), since cond depends on live state
+    argument cond;                       // the value cond_body produces
+    std::vector< value > dispatch_args;  // same bindings' values *after* cond_body ran (whatever
+                                          // survived its dups) -- used for the post-cond dispatch
+                                          // call, since `params` itself may be partly consumed by
+                                          // then. Same order as params.
+    std::vector< instr > body;           // the loop's own body, run once per continuing iteration
+    std::vector< value > params;         // live values at loop entry (also each generated function's
+                                          // own "in" parameter names -- body/cond_body are lowered
+                                          // independently, each starting fresh from these)
+    std::vector< value > next_params;    // same bindings, post-body values, same order as params
+    std::vector< value > outputs;        // fresh ids for each binding's post-loop value; the
+                                          // enclosing scope is reassigned to these, same order as params
 };
 
 struct drop_data

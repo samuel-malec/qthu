@@ -302,8 +302,37 @@ void pretty_printer::print_lin_instr( std::ostream& out, const lin::instr& i, in
     {
         out << "[ loop ]\n";
 
+        pad( out, depth + 1 );
+        out << "[ cond ]\n";
+        for ( auto& instr : l->cond_body )
+            print_lin_instr( out, instr, depth + 2 );
+        pad( out, depth + 1 );
+        out << "[ condition value ] ";
+        print_lin_argument( out, l->cond );
+        out << '\n';
+
+        pad( out, depth + 1 );
+        out << "[ dispatch args ] ";
+        for ( auto& v : l->dispatch_args )
+        {
+            print_lin_value( out, v );
+            out << ' ';
+        }
+        out << '\n';
+
+        pad( out, depth + 1 );
+        out << "[ body ]\n";
         for ( auto& instr : l->body )
-            print_lin_instr( out, instr, depth + 1 );
+            print_lin_instr( out, instr, depth + 2 );
+
+        pad( out, depth + 1 );
+        out << "[ outputs ] ";
+        for ( auto& v : l->outputs )
+        {
+            print_lin_value( out, v );
+            out << ' ';
+        }
+        out << '\n';
     }
     else if ( std::get_if< lin::brk_data >( &i.data ) )
     {
