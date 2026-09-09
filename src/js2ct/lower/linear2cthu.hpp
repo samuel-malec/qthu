@@ -399,6 +399,7 @@ struct structure_builder
         structure res{ .id = struct_name };
         curr_struct = &res;
         lower_fn( "run", fn.body );
+        curr_struct->functions[ "run" ].in = vals2str( fn.params );
         return *curr_struct;
     }
 };
