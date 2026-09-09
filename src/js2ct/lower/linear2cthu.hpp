@@ -400,6 +400,23 @@ struct structure_builder
         curr_struct = &res;
         lower_fn( "run", fn.body );
         curr_struct->functions[ "run" ].in = vals2str( fn.params );
+
+        // ret_data (a direct `return`) and if_data/loop_data's own final tail
+        // call (a `return` inside a branch) both write their result into a
+        // slot literally named "out" -- but only when the function actually
+        // returns something (the top-level script never does). Detect that
+        // by scanning the built body rather than threading a flag through
+        // every lower_fn case, so a void function's "run" keeps an empty
+        // .out (matching reader.cpp: no declared .out means no return value).
+        bool produces_out = false;
+        for ( auto& insn : curr_struct->functions[ "run" ].body )
+            for ( auto& o : insn.out )
+                if ( o == "out" )
+                    produces_out = true;
+
+        if ( produces_out )
+            curr_struct->functions[ "run" ].out = { "out" };
+
         return *curr_struct;
     }
 };
