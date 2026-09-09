@@ -40,15 +40,15 @@ structure jsvalue : arithmetic[ jsvalue, stck, bool ], bitwise[ jsvalue ]
     shl    = qjs_val_ashl
     shr    = qjs_val_ashr
 
-    ; JS object/array model: jsvalue already is QuickJS's JSValue, which
-    ; already unifies objects/arrays/scalars, so these are plain new ops on
-    ; the existing structure -- no new type, no new signature. Construction
-    ; commits to a kind up front (cons_obj vs cons_arr); get/set are shared
-    ; since access dispatches on the value's own runtime tag.
     cons_obj = qjs_val_cons_obj
     cons_arr = qjs_val_cons_arr
     get      = qjs_val_get
     set      = qjs_val_set
+
+    ; a stack is a jsvalue array (cons_arr constructs an empty one); push/pop
+    ; are just get/set's append/remove-last siblings on the same representation
+    push     = qjs_val_push
+    pop      = qjs_val_pop
 
     assert = qjs_val_assert
 )
