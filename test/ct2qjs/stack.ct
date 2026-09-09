@@ -1,0 +1,51 @@
+; A stack is a jsvalue array: cons_arr constructs an empty one, push/pop are
+; get/set's append/remove-last siblings on the same representation -- no new
+; type, matching cons_obj/cons_arr/get/set (P3.1/P3.2).
+;
+; Covers: LIFO pop order, and that pop actually truncates the array (not
+; just returns the right top value once) -- pushing again after a pop must
+; overwrite the freed slot, not append past the still-stale old length.
+
+structure main
+(
+    run = λ
+    (
+        jsvalue cons_arr → s0
+
+        jsvalue cons_10 → v1
+        jsvalue push s0 v1 → s1
+
+        jsvalue cons_20 → v2
+        jsvalue push s1 v2 → s2
+
+        jsvalue cons_30 → v3
+        jsvalue push s2 v3 → s3
+
+        ; LIFO: pop returns the most recently pushed value first
+        jsvalue pop s3 → top1 s4
+        jsvalue cons_30 → expect1
+        jsvalue eq? top1 expect1 → ok1
+        jsvalue assert ok1
+
+        ; push-after-pop: must reuse the freed slot, not append past it
+        jsvalue cons_99 → v4
+        jsvalue push s4 v4 → s5
+
+        jsvalue pop s5 → top2 s6
+        jsvalue cons_99 → expect2
+        jsvalue eq? top2 expect2 → ok2
+        jsvalue assert ok2
+
+        jsvalue pop s6 → top3 s7
+        jsvalue cons_20 → expect3
+        jsvalue eq? top3 expect3 → ok3
+        jsvalue assert ok3
+
+        jsvalue pop s7 → top4 s8
+        jsvalue cons_10 → expect4
+        jsvalue eq? top4 expect4 → ok4
+        jsvalue assert ok4
+
+        jsvalue drop s8
+    )
+)

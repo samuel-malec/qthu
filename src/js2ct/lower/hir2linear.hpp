@@ -259,7 +259,11 @@ struct hir_to_linear
         rename_env env{};
 
         for ( auto& p : fn.parameters )
-            env.declare( p, vn.fresh() );
+        {
+            value v = vn.fresh();
+            env.declare( p, v );
+            res.params.push_back( v );
+        }
         lower_stmt( res.body, env, fn.body_root );
         cleanup_env( env, res.body );
 

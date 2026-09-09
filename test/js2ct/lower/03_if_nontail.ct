@@ -28,20 +28,20 @@ structure clampNonNeg
         jsvalue cons_0      → x2
 
         clampNonNeg cont_0     → k
-        f_i_i call k x2        → out
+        f_j_j call k x2        → out
     )
 
     else_0 = λ x → out
     (
         clampNonNeg cont_0  → k
-        f_i_i call k x      → out
+        f_j_j call k x      → out
     )
 
     frame_0 = λ A B x → out
     (
         jsvalue dup x       → x1 x2
-        f_i_i call A x1     → out1
-        f_i_i call B x2     → out2
+        f_j_j call A x1     → out1
+        f_j_j call B x2     → out2
         jsvalue join out1 out2 → out
     )
 
@@ -57,11 +57,11 @@ structure clampNonNeg
         clampNonNeg else_0  → else_ref
         clampNonNeg frame_0 → frame
 
-        f_i_i opt cmp1 then_ref → alt1
-        f_i_i opt cmp3 else_ref → alt2
-        f_i_i join alt1 alt2 frame → cont
+        f_j_j opt cmp1 then_ref → alt1
+        f_j_j opt cmp3 else_ref → alt2
+        f_j_j join alt1 alt2 frame → cont
 
-        f_i_i call cont x2 → out
+        f_j_j call cont x2 → out
     )
 )
 
@@ -74,7 +74,7 @@ structure main
         jsvalue sub zero five → neg5
 
         clampNonNeg run           → cn_ref
-        f_i_i call cn_ref neg5    → result
+        f_j_j call cn_ref neg5    → result
 
         jsvalue cons_1            → expect
         jsvalue eq? result expect → ok

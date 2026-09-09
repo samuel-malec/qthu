@@ -16,6 +16,29 @@
 namespace qthu::ct2qjs
 {
 
+// The runtime atom index where QuickJS's built-in atoms end and file-local
+// custom atoms begin (JS_ATOM_END in quickjs.c, verified against the
+// currently-vendored quickjs-atom.h: 242 DEF() entries + JS_ATOM_NULL==0 -> 243).
+// NOTE: cmake/quickjs.cmake pins QuickJS to GIT_TAG master, not a fixed
+// commit -- if upstream adds/removes a built-in atom, this constant goes
+// stale and qjs_val_cons_str resolves to the wrong runtime atom. Known,
+// accepted tradeoff (discussed with the user) in exchange for not having to
+// restructure bytecode/program.hpp's per-function constant pool.
+inline constexpr uint32_t js_atom_end = 243;
+
+// QuickJS's built-in JS_ATOM_length, needed (not a register_atom()'d custom
+// atom -- that would intern a *different* atom that merely prints as
+// "length") to write an array's real .length property: QuickJS's property
+// setter special-cases writes whose atom == JS_ATOM_length on an array-class
+// object to go through set_array_length() (quickjs.c), which is what
+// actually truncates/frees elements past the new length -- a custom atom
+// with the same text wouldn't match that check and would just become an
+// ordinary own property. Verified against the currently-vendored
+// quickjs-atom.h: "length" is the 50th DEF() entry, and JS_ATOM_NULL==0
+// occupies index 0 before the DEF list starts, so JS_ATOM_length == 50.
+// Same GIT_TAG-master fragility tradeoff as js_atom_end above.
+inline constexpr uint32_t js_atom_length = 50;
+
 struct fn_patch
 {
     std::vector< uint32_t > cpool_funcs;
@@ -30,8 +53,21 @@ struct codegen
     std::vector< fn_patch > patches;
     std::vector< std::unordered_map< uint32_t, uint16_t > > fn_capture_idx;
     std::size_t label_counter = 0;
+    std::vector< std::string > custom_atoms;
 
     std::string make_label() { return std::format("lab{}", label_counter++ ); }
+
+    // Registers a new string in the file-local atom table and returns its
+    // runtime atom index, for use as a push_atom_value_() operand. Bytecode
+    // functions are 1:1 with ir.fns (plus __toplevel__), so that count is
+    // fixed and known throughout codegen -- see the atom-table layout note
+    // on bc::program::custom_atoms.
+    uint32_t register_atom( const std::string& s )
+    {
+        const uint32_t index = js_atom_end + static_cast< uint32_t >( 1 + ir.fns.size() + custom_atoms.size() );
+        custom_atoms.push_back( s );
+        return index;
+    }
     
     uint32_t find_main_id() const
     {
@@ -229,6 +265,8 @@ struct codegen
             if ( patches[ i ].capture_all )
                 fill_captured_locals( bc_prog.functions[ i ] );
         }
+
+        bc_prog.custom_atoms = custom_atoms;
 
         return bc_prog;
     }

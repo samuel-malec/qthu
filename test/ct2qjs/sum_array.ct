@@ -1,0 +1,140 @@
+; JS:
+;   function sumArray(arr, n) {
+;       let i = 0;
+;       let total = 0;
+;       while (i < n) {
+;           total = total + arr[i];
+;           i = i + 1;
+;       }
+;       return total;
+;   }
+;   function main() {
+;       let a = [];
+;       a[0] = 10;
+;       a[1] = 20;
+;       a[2] = 30;
+;       return sumArray(a, 3);
+;   }
+;
+; A call can only ever propagate ONE output (QuickJS functions return a
+; single value), so the loop's live bindings (arr, n, i, total) travel
+; together as a single packed array -- cons_arr/set before each call,
+; dup/get after -- instead of as separate declared outputs.
+
+structure sumArray
+(
+    body_0 = λ arr n i total → packed
+    (
+        jsvalue dup arr → arr1 arr2
+        jsvalue dup i   → i1 i2
+        jsvalue get arr1 i1 → elem
+
+        jsvalue add total elem → total2
+
+        jsvalue cons_1  → one
+        jsvalue add i2 one → inext
+
+        sumArray loop_0                         → self
+        f_j4_j call self arr2 n inext total2 → packed
+    )
+
+    exit_0 = λ arr n i total → packed
+    (
+        jsvalue cons_arr → p0
+        jsvalue cons_0   → k0
+        jsvalue set p0 k0 arr → p1
+        jsvalue cons_1   → k1
+        jsvalue set p1 k1 n → p2
+        jsvalue cons_2   → k2
+        jsvalue set p2 k2 i → p3
+        jsvalue cons_3   → k3
+        jsvalue set p3 k3 total → packed
+    )
+
+    frame_0 = λ A B arr n i total → packed
+    (
+        jsvalue dup arr   → arr_1 arr_2
+        jsvalue dup n     → n_1 n_2
+        jsvalue dup i     → i_1 i_2
+        jsvalue dup total → total_1 total_2
+
+        f_j4_j call A arr_1 n_1 i_1 total_1 → p1
+        f_j4_j call B arr_2 n_2 i_2 total_2 → p2
+        jsvalue join p1 p2                  → packed
+    )
+
+    loop_0 = λ arr n i total → packed
+    (
+        jsvalue dup i → i1 i2
+        jsvalue dup n → n1 n2
+        jsvalue lt? i1 n1 → cmp
+
+        jsvalue dup cmp  → cmp1 cmp2
+        jsvalue not cmp2 → cmp3
+
+        sumArray body_0  → body_ref
+        sumArray exit_0  → exit_ref
+        sumArray frame_0 → frame
+
+        f_j4_j opt cmp1 body_ref → alt1
+        f_j4_j opt cmp3 exit_ref → alt2
+        f_j4_j join alt1 alt2 frame → cont
+
+        f_j4_j call cont arr n2 i2 total → packed
+    )
+
+    run = λ arr n → out
+    (
+        jsvalue cons_0 → i0
+        jsvalue cons_0 → total0
+
+        sumArray loop_0             → cont
+        f_j4_j call cont arr n i0 total0 → packed
+
+        jsvalue dup packed → u1 u2
+        jsvalue cons_0     → uk0
+        jsvalue get u1 uk0 → r_arr
+        jsvalue dup u2     → u3 u4
+        jsvalue cons_1     → uk1
+        jsvalue get u3 uk1 → r_n
+        jsvalue dup u4     → u5 u6
+        jsvalue cons_2     → uk2
+        jsvalue get u5 uk2 → r_i
+        jsvalue cons_3     → uk3
+        jsvalue get u6 uk3 → r_total
+
+        jsvalue drop r_arr
+        jsvalue drop r_n
+        jsvalue drop r_i
+        jsvalue move r_total → out
+    )
+)
+
+structure main
+(
+    run = λ
+    (
+        jsvalue cons_arr → a0
+
+        jsvalue cons_0  → k0
+        jsvalue cons_10 → v0
+        jsvalue set a0 k0 v0 → a1
+
+        jsvalue cons_1  → k1
+        jsvalue cons_20 → v1
+        jsvalue set a1 k1 v1 → a2
+
+        jsvalue cons_2  → k2
+        jsvalue cons_30 → v2
+        jsvalue set a2 k2 v2 → a3
+
+        jsvalue cons_3 → n
+
+        sumArray run              → prog
+        f_jj_j call prog a3 n → result
+
+        jsvalue cons_60 → expect
+        jsvalue eq? result expect → ok
+        jsvalue assert ok
+    )
+)
