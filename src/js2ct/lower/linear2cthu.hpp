@@ -3,6 +3,7 @@
 #include "../ir/cthu.hpp"
 #include "../ir/linear.hpp"
 #include "../printer/pretty_printer.hpp"
+#include "../sema/analysis.hpp"
 
 namespace qthu::js2ct::cthu
 {
@@ -225,12 +226,14 @@ struct structure_builder
 
 struct lowerer
 {
+    sema::analysis_result& sema;
+
     cthu::module lower( lin::program& prog )
     {
         cthu::module mod{};
         for ( int i = 0; i < prog.functions.size(); ++i )
         {
-            std::string struct_name = i == 0 ? "main" : "f" + std::to_string( i );
+            std::string struct_name = i == 0 ? "main" : sema.function_name( prog.functions[ i ].name );
             structure_builder sb{ struct_name, prog.functions[ i ] };
             mod.structures.push_back( std::move( sb.lower() ) );
         }

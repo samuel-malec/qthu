@@ -350,14 +350,6 @@ bool is_empty_block( hir::function& fn, hir::stmt_id s )
     return block && block->stmts.empty();
 }
 
-inline std::string function_name( sema::analysis_result& sema, sema::function_id fid )
-{
-    for ( auto& sym : sema.declarations )
-        if ( sym.kind == sema::symbol::kind_t::function && sym.function && sym.function->value == fid.value )
-            return sema.names.at( sym.name.value );
-    return "<script>"; // the implicit top-level function has no declaring symbol
-}
-
 void pretty_printer::print_hir_expr( std::ostream& out, hir::function& fn, hir::expr_id e, int depth )
 {
     const auto& node = fn.get( e );
@@ -494,13 +486,13 @@ void pretty_printer::print_hir_stmt( std::ostream& out, hir::function& fn, hir::
 
 void pretty_printer::print_hir_function( std::ostream& out, hir::function& fn, sema::analysis_result& semantics )
 {
-    out << function_name( semantics, fn.id ) << " :: params: ( ";
+    out << semantics.function_name( fn.id ) << " :: params: ( ";
     for ( size_t i = 0; i < fn.parameters.size(); ++i )
         out << "v" << fn.parameters[ i ].value << ( i + 1 == fn.parameters.size() ? "" : ", " );
     out << " )";
 
     if ( fn.lexical_parent )
-        out << "  parent: " << function_name( semantics, *fn.lexical_parent );
+        out << "  parent: " << semantics.function_name( *fn.lexical_parent );
 
     if ( !fn.captures.empty() )
     {
