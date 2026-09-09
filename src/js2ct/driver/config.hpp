@@ -63,6 +63,7 @@ inline config parse_config( int argc, char* const* argv )
 
             ++i;
             file_out = argv[ i ];
+            continue;
         }
         else if ( strcmp( argv[ i ], "--emit-ast" ) == 0 )
         {
