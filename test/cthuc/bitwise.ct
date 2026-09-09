@@ -1,0 +1,48 @@
+structure main
+(
+    run = λ
+    (
+        jsvalue cons_6 → a0
+        jsvalue cons_3 → b0
+        jsvalue band a0 b0 → r0
+        jsvalue cons_2 → expect0    ; 6 & 3 == 2
+        jsvalue eq? r0 expect0 → ok0
+        jsvalue assert ok0
+
+        jsvalue cons_6 → a1
+        jsvalue cons_3 → b1
+        jsvalue bor a1 b1 → r1
+        jsvalue cons_7 → expect1    ; 6 | 3 == 7
+        jsvalue eq? r1 expect1 → ok1
+        jsvalue assert ok1
+
+        jsvalue cons_6 → a2
+        jsvalue cons_3 → b2
+        jsvalue bxor a2 b2 → r2
+        jsvalue cons_5 → expect2    ; 6 ^ 3 == 5
+        jsvalue eq? r2 expect2 → ok2
+        jsvalue assert ok2
+
+        jsvalue cons_6   → a3
+        jsvalue bnot a3  → r3       ; ~6 == -7
+        jsvalue cons_7   → seven
+        jsvalue add r3 seven → r3sum
+        jsvalue cons_0   → zero
+        jsvalue eq? r3sum zero → ok3
+        jsvalue assert ok3
+
+        ; shl/shr are deliberately NOT exercised here: qjs_val_ashl/
+        ; qjs_val_ashr only emit one get_loc (via get1) before the binary
+        ; shl_()/shr_() opcode, which needs two stack values. This under-
+        ; supplies the operand stack by one slot, so the opcode reads/
+        ; writes one slot below the stack region - i.e. into the last
+        ; local variable slot - corrupting it. Every instruction after
+        ; that in the same function keeps operating one slot further out
+        ; of bounds, up to and including any assert that follows: it was
+        ; observed to make `eq?` compare a freshly-pushed literal against
+        ; itself (via the aliasing) rather than against the real shl/shr
+        ; result, so the assert passes regardless of whether the computed
+        ; value is correct. See PLAN.md P0.8; do not re-add shl/shr
+        ; assertions here until that's fixed and re-verified.
+    )
+)
