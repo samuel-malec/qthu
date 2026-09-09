@@ -213,8 +213,24 @@ namespace qthu::ct2qjs
 
         if ( name.starts_with( "qjs_val_cons_" ) )
         {
-            int result{};
             size_t offset = 13; // length of 'qjs_val_cons_'
+            auto suffix = name.substr( offset );
+
+            if ( suffix == "true" )
+            {
+                builder.add_instr( qthu::as::push_true_() );
+                builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+                return;
+            }
+
+            if ( suffix == "false" )
+            {
+                builder.add_instr( qthu::as::push_false_() );
+                builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+                return;
+            }
+
+            int result{};
             auto [ ptr, ec ] = std::from_chars( name.data() + offset, name.data() + name.size(), result);
 
             if ( ec == std::errc::invalid_argument )
@@ -222,7 +238,7 @@ namespace qthu::ct2qjs
             else if ( ec == std::errc() )
             {
                 builder.add_instr( qthu::as::push_i32_( result ) );
-                builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );   
+                builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
             }
 
             return;
