@@ -2,7 +2,7 @@
 
 #include "codegen.hpp"
 
-namespace qthu::cthuc
+namespace qthu::ct2qjs
 {
     // This is not the semantics of cthulhu join, it is done this way to simplify the codegen
     void codegen::emit_fn_join( const lowered_insn& insn )
@@ -228,12 +228,13 @@ namespace qthu::cthuc
             return;
         }
 
-        if ( name == "qjs_val_not" )
+        if ( name == "qjs_val_lnot" )
         {
             get1( insn );
-            builder.add_instr( qthu::as::not_() );
+            builder.add_instr( qthu::as::lnot_() );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
             return;
-    }
+        }
 
         if ( name == "qjs_val_and" )
         {

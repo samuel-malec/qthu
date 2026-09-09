@@ -1,6 +1,6 @@
 #include "reader.hpp"
 
-namespace qthu::cthuc
+namespace qthu::ct2qjs
 {
     diag reader::error( token t, auto... msg )
     {

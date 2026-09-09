@@ -9,7 +9,7 @@
 
 #include "../common/utf8.hpp"
 
-namespace qthu::cthuc
+namespace qthu::ct2qjs
 {
     struct source_file 
     {

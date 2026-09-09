@@ -9,7 +9,7 @@
 #include "symtab.hpp"
 #include "../cthu_core/types.hpp"
 
-namespace qthu::cthuc
+namespace qthu::ct2qjs
 {
 
 struct diag_base : brq::refcount_base<>

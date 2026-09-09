@@ -1,0 +1,83 @@
+; JS:
+;   function clampNonNeg(x) {
+;       if (x < 0) { x = 0; }
+;       return x + 1;
+;   }
+;   let result = clampNonNeg(0 - 5);
+;
+; `return x + 1` is NOT in tail position relative to the if -- it runs
+; regardless of which branch was taken. Technique: hoist it into its own
+; closure `cont_0`, parameterized by the scope live after the if (just x,
+; but a *different* x depending on branch, which is exactly why it must be
+; threaded as a parameter rather than referenced directly). then_0/else_0
+; no longer compute the final answer themselves -- each just settles its
+; own value of x and tail-calls cont_0 with it. opt/join/frame still
+; dispatch over then_0 vs else_0 exactly as in the tail case.
+
+structure clampNonNeg
+(
+    cont_0 = λ x → out
+    (
+        jsvalue cons_1    → one
+        jsvalue add x one → out
+    )
+
+    then_0 = λ x → out
+    (
+        jsvalue drop x      ; original value is replaced, not needed
+        jsvalue cons_0      → x2
+
+        clampNonNeg cont_0     → k
+        f_i_i call k x2        → out
+    )
+
+    else_0 = λ x → out
+    (
+        clampNonNeg cont_0  → k
+        f_i_i call k x      → out
+    )
+
+    frame_0 = λ A B x → out
+    (
+        jsvalue dup x       → x1 x2
+        f_i_i call A x1     → out1
+        f_i_i call B x2     → out2
+        jsvalue join out1 out2 → out
+    )
+
+    run = λ x → out
+    (
+        jsvalue cons_0      → zero
+        jsvalue dup x       → x1 x2
+        jsvalue lt? x1 zero → cmp
+        jsvalue dup cmp     → cmp1 cmp2
+        jsvalue not cmp2    → cmp3
+
+        clampNonNeg then_0  → then_ref
+        clampNonNeg else_0  → else_ref
+        clampNonNeg frame_0 → frame
+
+        f_i_i opt cmp1 then_ref → alt1
+        f_i_i opt cmp3 else_ref → alt2
+        f_i_i join alt1 alt2 frame → cont
+
+        f_i_i call cont x2 → out
+    )
+)
+
+structure main
+(
+    run = λ
+    (
+        jsvalue cons_0 → zero
+        jsvalue cons_5 → five
+        jsvalue sub zero five → neg5
+
+        clampNonNeg run           → cn_ref
+        f_i_i call cn_ref neg5    → result
+
+        jsvalue cons_1            → expect
+        jsvalue eq? result expect → ok
+        jsvalue assert ok
+    )
+)

@@ -13,7 +13,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace qthu::cthuc
+namespace qthu::ct2qjs
 {
 
 struct fn_patch
@@ -25,7 +25,7 @@ struct fn_patch
 
 struct codegen
 {
-    cthuc::program& ir;
+    program& ir;
     as::asmbuilder& builder;
     std::vector< fn_patch > patches;
     std::vector< std::unordered_map< uint32_t, uint16_t > > fn_capture_idx;

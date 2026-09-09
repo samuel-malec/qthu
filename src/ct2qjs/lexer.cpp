@@ -2,7 +2,7 @@
 
 #include "lexer.hpp"
 
-namespace qthu::cthuc
+namespace qthu::ct2qjs
 {
     bool lexer::compatible( cat c, char32_t ch )
     {

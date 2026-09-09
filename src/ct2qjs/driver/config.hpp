@@ -7,7 +7,7 @@
 
 #include "../../common/error.hpp"
 
-namespace qthu::cthuc
+namespace qthu::ct2qjs
 {
 
 struct config
@@ -20,7 +20,7 @@ struct config
 inline void help()
 {
     std::cout << "Usage:\n"
-              << "./cthuc file.ct\n" 
+              << "./ct2qjs file.ct\n"
               << "-p path (path to folder containing prelude.ct and builtins.ct)\n"
               << "[-o out]\n";
 }
@@ -28,7 +28,7 @@ inline void help()
 inline config parse_config( int argc, char* const* argv )
 {
     if ( argc < 1 )
-        throw std::runtime_error( "Usage: ./cthuc file.js [-o out]\n" );
+        throw std::runtime_error( "Usage: ./ct2qjs file.js [-o out]\n" );
     
     if ( strcmp( argv[ 0 ], "-h" ) == 0 )
     {
@@ -59,7 +59,7 @@ inline config parse_config( int argc, char* const* argv )
             path_to_cthu = argv[ i ];
         }
         else
-            error( "invalid cthuc flag: ", argv[ i ] );
+            error( "invalid ct2qjs flag: ", argv[ i ] );
     }
 
     return  { 

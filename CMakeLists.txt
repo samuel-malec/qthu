@@ -36,10 +36,10 @@ target_link_libraries(bcrun
 add_executable(cthuc)
 target_sources(cthuc
     PRIVATE
-    src/cthuc/main.cpp
-    src/cthuc/lexer.cpp
-    src/cthuc/reader.cpp
-    src/cthuc/codegen.cpp
+        src/ct2qjs/main.cpp
+        src/ct2qjs/lexer.cpp
+        src/ct2qjs/reader.cpp
+        src/ct2qjs/codegen.cpp
     src/asm/asm.cpp
     src/asm/instruction.cpp
     src/asm/directive.cpp

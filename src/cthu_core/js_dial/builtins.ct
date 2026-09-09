@@ -1,4 +1,4 @@
-structure jsvalue : arithmetic[ jsvalue, stck, bool ]
+structure jsvalue : arithmetic[ jsvalue, stck, bool ], bitwise[ jsvalue ]
 (
     dup    = qjs_val_dup
     drop   = qjs_val_drop
@@ -22,12 +22,25 @@ structure jsvalue : arithmetic[ jsvalue, stck, bool ]
     sub    = qjs_val_sub
     mul    = qjs_val_mul
     div    = qjs_val_div
+    rem    = qjs_val_rem
     eq?    = qjs_val_eq
+    ne?    = qjs_val_ne
     lt?    = qjs_val_lt
     le?    = qjs_val_le
     gt?    = qjs_val_gt
     ge?    = qjs_val_ge
     cons   = qjs_val_cons
+
+    not    = qjs_val_lnot
+
+    band   = qjs_val_and
+    bor    = qjs_val_or
+    bxor   = qjs_val_xor
+    bnot   = qjs_val_bnot
+    shl    = qjs_val_ashl
+    shr    = qjs_val_ashr
+
+    assert = qjs_val_assert
 )
 
 structure num : arithmetic[ num, stck, bool ]
@@ -63,6 +76,7 @@ structure jsbool : simple[ jsbool, stck, bool ]
     opt  = qjs_jsbool_opt
 )
 
+; kept for backwards compat with hand-written fib.ct-style examples; not
 structure fᵢⁱ : f₁¹[ func, jsvalue, bool, jsvalue, jsvalue ]
 (
     call = qjs_func_call

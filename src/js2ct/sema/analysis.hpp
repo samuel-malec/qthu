@@ -16,16 +16,14 @@
 namespace qthu::js2ct::sema
 {
 
-template< typename... Args >
-inline void error( Args&&... args )
+template< typename... Args > void error( Args&&... args )
 {
     std::ostringstream out;
     ( out << ... << std::forward< Args >( args ) );
     throw std::runtime_error( out.str() );
 }
 
-template< typename... Args >
-inline void error( const location& where, Args&&... args )
+template< typename... Args > void error( const location& where, Args&&... args )
 {
     std::ostringstream out;
     out << where << ": ";
@@ -36,7 +34,7 @@ inline void error( const location& where, Args&&... args )
 struct name_id
 {
     uint32_t value;
-    auto operator<=>( const name_id& ) const = default;
+    auto operator<=> ( const name_id& ) const = default;
 };
 
 struct symbol_id
@@ -128,7 +126,7 @@ struct analysis_result
     std::unordered_map< ast::stmt*, scope_id > stmt_scopes;
     std::unordered_map< ast::var_declarator*, binding_id > declarator_bindings;
     std::unordered_map< ast::param*, binding_id > param_bindings;
-    std::unordered_map< ast::expr*, binding_id> identifier_bindings;
+    std::unordered_map< ast::expr*, binding_id > identifier_bindings;
     std::unordered_map< ast::expr*, binding_id > assign_bindings;
     std::unordered_map< ast::expr*, function_id > direct_calls;
     std::unordered_map< ast::stmt*, function_id > stmt_functions;
@@ -144,7 +142,7 @@ struct analyzer
         std::optional< scope_id > curr_scope_id = current;
         while ( curr_scope_id )
         {
-            auto& curr_scope = get_scope( curr_scope_id.value() ); 
+            auto& curr_scope = get_scope( curr_scope_id.value() );
             if ( curr_scope.category == scope::kind::loop )
                 return true;
             curr_scope_id = curr_scope.parent;
@@ -165,8 +163,8 @@ struct analyzer
         return id;
     }
 
-    // NOTE: when creating function scope, the enclosing function needs to be set manually, 
-    // because it needs to be created before the function itself 
+    // NOTE: when creating function scope, the enclosing function needs to be set manually,
+    // because it needs to be created before the function itself
     scope_id declare_scope( scope::kind k, std::optional< scope_id > parent )
     {
         scope_id id{ static_cast< uint32_t >( result.scopes.size() ) };
@@ -180,12 +178,13 @@ struct analyzer
 
     binding_id add_binding( ast::var_declaration::kind_t k, scope_id declared_in, bool initialized )
     {
-        binding_id bid{ static_cast< uint32_t >( result.bindings.size() ) }; 
-        binding b{ .id = bid, 
-                    .kind = k,
-                    .declared_in = declared_in,
-                    .initialized = initialized,
-                };
+        binding_id bid{ static_cast< uint32_t >( result.bindings.size() ) };
+        binding b{
+            .id = bid,
+            .kind = k,
+            .declared_in = declared_in,
+            .initialized = initialized,
+        };
 
         result.bindings.push_back( b );
         return bid;
@@ -197,13 +196,14 @@ struct analyzer
     {
 
         symbol_id sid{ .value = static_cast< uint32_t >( result.declarations.size() ) };
-        symbol sym{ .id = sid,
-                    .kind = k,
-                    .name = name,
-                    .declared_in = declared_in,
-                    .binding = binding,
-                    .function = function,
-                };
+        symbol sym{
+            .id = sid,
+            .kind = k,
+            .name = name,
+            .declared_in = declared_in,
+            .binding = binding,
+            .function = function,
+        };
 
         result.declarations.push_back( sym );
         return sid;
@@ -230,7 +230,7 @@ struct analyzer
     }
 
     void declare_var( ast::var_declaration& vd, scope_id curr_scope )
-    {   
+    {
         for ( auto& declarator : vd.declarators )
         {
             name_id nid = intern( declarator.name );
@@ -250,7 +250,7 @@ struct analyzer
         get_scope( curr_scope ).add( nid, sid, result.names );
         return bid;
     }
-    
+
     std::optional< symbol_id > lookup( scope_id current, std::string_view name )
     {
         if ( !interned_names.contains( name ) )
@@ -265,12 +265,12 @@ struct analyzer
             auto it = curr_scope.declarations.find( nid );
             if ( it != curr_scope.declarations.end() )
                 return it->second;
-            curr_id = curr_scope.parent; 
+            curr_id = curr_scope.parent;
         }
 
         return {};
     }
-    
+
     void declare_block( ast::block& b, scope_id curr_scope )
     {
         for ( auto& stmt : b.stmts )
@@ -296,10 +296,10 @@ struct analyzer
             function_id fid{ .value = static_cast< uint32_t >( result.functions.size() ) };
             result.stmt_scopes[ &s ] = fn_scope;
             result.stmt_functions[ &s ] = fid;
-            
+
             function f{ .id = fid, .scope = fn_scope, .arity = fd->params.size() };
             result.functions.push_back( f );
-            
+
             get_scope( fn_scope ).enclosing_function = fid;
 
             name_id nid = intern( fd->name );
@@ -308,7 +308,7 @@ struct analyzer
 
             for ( auto& param : fd->params )
                 add_param_binding( param, fn_scope );
-            
+
             declare_block( fd->body, fn_scope );
         }
         else if ( auto* i = std::get_if< ast::if_stmt >( &s.data ) )
@@ -346,7 +346,7 @@ struct analyzer
             auto sid = lookup( curr_scope, id->name );
             if ( !sid )
                 error( e.loc, "undeclared identified '", id->name, "'" );
-            
+
             result.identifier_bindings[ &e ] = get_symbol( sid.value() ).binding.value();
         }
         else if ( auto* u = std::get_if< ast::unary >( &e.data ) )
@@ -364,11 +364,11 @@ struct analyzer
             auto sid = lookup( curr_scope, a->target.name );
             if ( !sid )
                 error( e.loc, "unknown identifier '", a->target.name, "'" );
-            
+
             auto& sym = get_symbol( sid.value() );
             if ( sym.kind != symbol::kind_t::variable )
                 error( e.loc, "invalid target of an assignment" );
-            
+
             result.assign_bindings[ &e ] = sym.binding.value();
 
             auto& bi = get_binding( sym.binding.value() );
@@ -385,20 +385,20 @@ struct analyzer
             auto sid = lookup( curr_scope, calle_name.name );
             if ( !sid )
                 error( e.loc, "undecared identifier" );
-            
+
             auto& sym = get_symbol( sid.value() );
             if ( sym.kind != symbol::kind_t::function )
                 error( e.loc, "expected a function" );
-            
+
             function_id fid = sym.function.value();
             result.direct_calls[ &e ] = fid;
             auto& f = get_function( fid );
-            
-            // TODO: javascript allows calling functions with less arguments than described by the function signature,
-            // we will have to work out way through it 
+
+            // TODO: javascript allows calling functions with less arguments than described by the
+            // function signature, we will have to work out way through it
             if ( c->args.size() != f.arity )
                 error( e.loc, "call arity doesn't match" );
-            
+
             for ( auto& arg : c->args )
                 resolve_expr( *arg, curr_scope );
         }
@@ -445,7 +445,7 @@ struct analyzer
         else if ( auto* r = std::get_if< ast::ret >( &s.data ) )
         {
             if ( !get_scope( curr_scope ).enclosing_function )
-                error( s.loc, "return statemnt outside of a function" );
+                error( s.loc, "return statement outside of a function" );
             if ( r->value )
                 resolve_expr( *r->value, curr_scope );
         }
@@ -499,10 +499,8 @@ struct analyzer
     {
         scope_id global = declare_scope( scope::kind::global, {} );
         function_id gfid{ .value = static_cast< uint32_t >( result.functions.size() ) };
-        function f{  .id = gfid,
-                        .scope = global,
-                        .arity = 0 };
-        
+        function f{ .id = gfid, .scope = global, .arity = 0 };
+
         result.functions.push_back( f );
         result.global_function = gfid;
 
@@ -511,9 +509,9 @@ struct analyzer
 
         for ( auto& stmt : ast.statements )
             resolve_stmt( *stmt, global );
-        
+
         return result;
     }
 };
 
-}
+} // namespace qthu::js2ct::sema

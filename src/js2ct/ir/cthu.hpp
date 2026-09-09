@@ -4,7 +4,7 @@
 #include <map>
 #include <vector>
 
-// We should eventually unify cthu representatations used by js2ct and cthuc, but  
+// We should eventually unify cthu representatations used by js2ct and ct2qjs, but
 namespace qthu::js2ct::cthu
 {
 

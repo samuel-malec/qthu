@@ -10,7 +10,7 @@
 
 int main( int argc, char* const* argv )
 {
-    using namespace qthu::cthuc;
+    using namespace qthu::ct2qjs;
     --argc;
     ++argv;
 

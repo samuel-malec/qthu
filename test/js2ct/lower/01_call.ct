@@ -1,0 +1,25 @@
+; JS:
+;   function five() { return 5; }
+;   let result = five();
+;
+
+structure five
+(
+    run = λ → out
+    (
+        jsvalue cons_5 → out
+    )
+)
+
+structure main
+(
+    run = λ
+    (
+        five run           → five_ref
+        f__i call five_ref → result
+
+        jsvalue cons_5            → expect
+        jsvalue eq? result expect → ok
+        jsvalue assert ok
+    )
+)

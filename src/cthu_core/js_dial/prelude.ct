@@ -41,14 +41,26 @@ signature arithmetic[ T, S, B ] : simple[ T, S, B ]
     sub ∷ T × T → T
     mul ∷ T × T → T
     div ∷ T × T → T
-    
+    rem ∷ T × T → T ; %
+
     eq? ∷ T × T → B
+    ne? ∷ T × T → B ; !=
     lt? ∷ T × T → B
     le? ∷ T × T → B
     gt? ∷ T × T → B
     ge? ∷ T × T → B
 
     cons ∷ ∅ → T ; we should be able to create cons instructions on demand
+)
+
+signature bitwise[ T ]
+(
+    band ∷ T × T → T
+    bor  ∷ T × T → T
+    bxor ∷ T × T → T
+    bnot ∷ T → T
+    shl  ∷ T × T → T
+    shr  ∷ T × T → T
 )
 
 ; base signature for functions ( although this will most likely have to change once we support first-class functions )

@@ -7,22 +7,22 @@
 #include "../reader.hpp"
 #include "../ir.hpp"
 
-namespace qthu::cthuc
+namespace qthu::ct2qjs
 {
 
 namespace fs = std::filesystem;
 
 struct compiler
 {
-    cthuc::diag parse_source( const fs::path &path, cthuc::symtab &st )
+    ct2qjs::diag parse_source( const fs::path &path, ct2qjs::symtab &st )
     {
         std::string content = read_file( path.string() );
-        auto ptr = std::make_shared< cthuc::source_file >( path.string(), std::move( content ) );
-        cthuc::reader r{ ptr, st };
+        auto ptr = std::make_shared< ct2qjs::source_file >( path.string(), std::move( content ) );
+        ct2qjs::reader r{ ptr, st };
         return r.parse();
     }
 
-    void throw_on_diag( cthuc::diag err )
+    void throw_on_diag( ct2qjs::diag err )
     {
         if ( !err )
             return;
@@ -34,7 +34,7 @@ struct compiler
 
     void run( config& conf )
     {
-        cthuc::symtab st;
+        ct2qjs::symtab st;
         auto input = fs::path( conf.in_path );
         auto prelude = fs::path( conf.path_to_cthu ) / "prelude.ct";
         auto builtins = fs::path( conf.path_to_cthu ) / "builtins.ct";
@@ -43,10 +43,10 @@ struct compiler
         throw_on_diag( parse_source( builtins, st ) );
         throw_on_diag( parse_source( input, st ) );
 
-        cthuc::program prog{ st };
+        ct2qjs::program prog{ st };
         prog.lower_to_ir();
         as::asmbuilder builder{};
-        cthuc::codegen cg{ prog, builder };
+        ct2qjs::codegen cg{ prog, builder };
         bc::program bc_prog = cg.lower_to_bc();
         bc_prog.write_binary( conf.out_path );
         std::cout << "qjs bytecode written to: " << conf.out_path << "\n";

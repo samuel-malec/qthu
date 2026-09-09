@@ -1,0 +1,67 @@
+; JS:
+;   function abs(x) {
+;       if (x < 0) { return 0 - x; } else { return x; }
+;   }
+;   let result = abs(0 - 7);
+;
+; Both branches are in tail position (nothing follows the if/else), so this
+; is exactly fib.ct's base/rec/frame/loop pattern with two branches instead
+; of recursion: then_0/else_0 closures + frame_0 combinator + opt/join/call.
+
+structure abs
+(
+    then_0 = λ x → out
+    (
+        jsvalue cons_0     → zero
+        jsvalue sub zero x → out
+    )
+
+    else_0 = λ x → out
+    (
+        jsvalue move x → out
+    )
+
+    frame_0 = λ A B x → out
+    (
+        jsvalue dup x       → x1 x2
+        f_i_i call A x1     → out1
+        f_i_i call B x2     → out2
+        jsvalue join out1 out2 → out
+    )
+
+    run = λ x → out
+    (
+        jsvalue cons_0      → zero
+        jsvalue dup x       → x1 x2
+        jsvalue lt? x1 zero → cmp
+        jsvalue dup cmp     → cmp1 cmp2
+        jsvalue not cmp2    → cmp3
+
+        abs then_0  → then_ref
+        abs else_0  → else_ref
+        abs frame_0 → frame
+
+        f_i_i opt cmp1 then_ref → alt1
+        f_i_i opt cmp3 else_ref → alt2
+        f_i_i join alt1 alt2 frame → cont
+
+        f_i_i call cont x2 → out
+    )
+)
+
+structure main
+(
+    run = λ
+    (
+        jsvalue cons_0  → zero
+        jsvalue cons_7  → seven
+        jsvalue sub zero seven → neg7
+
+        abs run           → abs_ref
+        f_i_i call abs_ref neg7 → result
+
+        jsvalue cons_7            → expect
+        jsvalue eq? result expect → ok
+        jsvalue assert ok
+    )
+)

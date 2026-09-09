@@ -1,0 +1,91 @@
+; JS:
+;   function sumTo(n) {
+;       let i = 0, s = 0;
+;       while (i < n) { s = s + i; i = i + 1; }
+;       return s;
+;   }
+;   let result = sumTo(5);
+;
+; A loop is recursion where the "recursive call" targets the same closure.
+; loop_0 plays fib.ct's `loop` role (the dispatcher); body_0 plays `rec`
+; (keep looping -- tail-calls back into `sumTo loop_0`, i.e. itself, by
+; name); base_0 plays `base` (loop exit). No cthuc changes needed: fn_ref
+; resolution just looks a name up in the symbol table, which already
+; contains this structure's own functions.
+
+structure sumTo
+(
+    body_0 = λ n i s → out
+    (
+        jsvalue dup i     → i1 i2
+        jsvalue add s i1  → s2
+
+        jsvalue cons_1    → one
+        jsvalue add i2 one → i2next
+
+        sumTo loop_0                → cont
+        f_iii_i call cont n i2next s2 → out
+    )
+
+    base_0 = λ n i s → out
+    (
+        jsvalue drop n
+        jsvalue drop i
+        jsvalue move s → out
+    )
+
+    frame_0 = λ A B n i s → out
+    (
+        jsvalue dup n → n1 n2
+        jsvalue dup i → i1 i2
+        jsvalue dup s → s1 s2
+
+        f_iii_i call A n1 i1 s1 → out1
+        f_iii_i call B n2 i2 s2 → out2
+        jsvalue join out1 out2  → out
+    )
+
+    loop_0 = λ n i s → out
+    (
+        jsvalue dup n     → n1 n2
+        jsvalue dup i     → i1 i2
+        jsvalue lt? i1 n1 → cmp
+
+        jsvalue dup cmp  → cmp1 cmp2
+        jsvalue not cmp2 → cmp3
+
+        sumTo body_0  → body_ref
+        sumTo base_0  → base_ref
+        sumTo frame_0 → frame
+
+        f_iii_i opt cmp1 body_ref → alt1
+        f_iii_i opt cmp3 base_ref → alt2
+        f_iii_i join alt1 alt2 frame → cont
+
+        f_iii_i call cont n2 i2 s → out
+    )
+
+    run = λ n → out
+    (
+        jsvalue cons_0 → i0
+        jsvalue cons_0 → s0
+
+        sumTo loop_0                 → cont
+        f_iii_i call cont n i0 s0    → out
+    )
+)
+
+structure main
+(
+    run = λ
+    (
+        jsvalue cons_5 → n
+
+        sumTo run          → prog
+        f_i_i call prog n  → result
+
+        jsvalue cons_10           → expect  ; 0+1+2+3+4
+        jsvalue eq? result expect → ok
+        jsvalue assert ok
+    )
+)
