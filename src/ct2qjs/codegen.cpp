@@ -197,7 +197,7 @@ namespace qthu::ct2qjs
 
         if ( name == "qjs_val_ashl" )
         {
-            get1( insn );
+            get2( insn );
             builder.add_instr( qthu::as::shl_() );
             builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
             return;
@@ -205,7 +205,7 @@ namespace qthu::ct2qjs
 
         if ( name == "qjs_val_ashr" )
         {
-            get1( insn );
+            get2( insn );
             builder.add_instr( qthu::as::shr_() );
             builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
             return;

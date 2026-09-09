@@ -31,18 +31,18 @@ structure main
         jsvalue eq? r3sum zero → ok3
         jsvalue assert ok3
 
-        ; shl/shr are deliberately NOT exercised here: qjs_val_ashl/
-        ; qjs_val_ashr only emit one get_loc (via get1) before the binary
-        ; shl_()/shr_() opcode, which needs two stack values. This under-
-        ; supplies the operand stack by one slot, so the opcode reads/
-        ; writes one slot below the stack region - i.e. into the last
-        ; local variable slot - corrupting it. Every instruction after
-        ; that in the same function keeps operating one slot further out
-        ; of bounds, up to and including any assert that follows: it was
-        ; observed to make `eq?` compare a freshly-pushed literal against
-        ; itself (via the aliasing) rather than against the real shl/shr
-        ; result, so the assert passes regardless of whether the computed
-        ; value is correct. See PLAN.md P0.8; do not re-add shl/shr
-        ; assertions here until that's fixed and re-verified.
+        jsvalue cons_1 → a4
+        jsvalue cons_3 → b4
+        jsvalue shl a4 b4 → r4
+        jsvalue cons_8 → expect4    ; 1 << 3 == 8
+        jsvalue eq? r4 expect4 → ok4
+        jsvalue assert ok4
+
+        jsvalue cons_8 → a5
+        jsvalue cons_3 → b5
+        jsvalue shr a5 b5 → r5
+        jsvalue cons_1 → expect5    ; 8 >> 3 == 1
+        jsvalue eq? r5 expect5 → ok5
+        jsvalue assert ok5
     )
 )
