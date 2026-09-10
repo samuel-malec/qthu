@@ -189,6 +189,13 @@ struct structure_builder
                     emit( curr_fn, "jsvalue", "cons_" + std::string( std::get< bool >( cd->c ) ? "true" : "false" ), {}, { cd->target } );
             }
 
+            else if ( auto* sd = std::get_if< lin::str_cons_data >( &i.data ) )
+            {
+                insn ins{ "jsvalue", "cons_str", {}, args2str( { sd->target } ) };
+                ins.literal = sd->str;
+                curr_fn.body.push_back( std::move( ins ) );
+            }
+
             else if ( auto* u = std::get_if< lin::unary_data >( &i.data ) )
                 emit( curr_fn, "jsvalue", op_to_str( u->op ), { u->arg1 }, { u->target } );
             

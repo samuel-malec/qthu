@@ -39,7 +39,10 @@ struct lowerer
 
         else if ( auto* bl = std::get_if< ast::bool_lit >( &e.data ) )
             res.data = expr::bool_lit{ .value = bl->value };
-        
+
+        else if ( auto* sl = std::get_if< ast::str_lit >( &e.data ) )
+            res.data = expr::str_lit{ .value = sl->value };
+
         else if ( auto* id = std::get_if< ast::var >( &e.data ) )
             res.data = expr::var{ .id = sema.identifier_bindings.at( &e ) };
 

@@ -3,32 +3,46 @@
 #include <cstdint>
 #include <optional>
 #include <set>
+#include <string>
 #include <variant>
 #include <vector>
- 
+
 #include "../sema/types.hpp"
- 
+
 namespace qthu::js2ct::lin
 {
- 
+
 struct value
 {
     uint32_t id;
 };
- 
+
 inline bool operator<( const value& lhs, const value& rhs )
 {
     return lhs.id < rhs.id;
 }
- 
+
 using constant = std::variant< uint64_t, bool >;
 using argument = std::variant< constant, value >;
- 
+
 struct instr;
- 
+
 struct cons_data
 {
     constant c;
+    value target;
+};
+
+// A string literal is deliberately its own instr kind, not folded into
+// cons_data/constant: constant feeds into `argument`, which every binary/
+// unary/call operand accepts via an implicit conversion -- adding
+// std::string to that variant made std::string-valued `in`/`out` name
+// lists (used throughout linear2cthu.hpp's emit() calls) ambiguously
+// constructible as either vector<std::string> or vector<argument>, since
+// a plain string now implicitly converts to argument through constant.
+struct str_cons_data
+{
+    std::string str;
     value target;
 };
 
@@ -111,6 +125,7 @@ struct instr
 {
     using data_type = std::variant<
                             cons_data,
+                            str_cons_data,
                             unary_data,
                             binary_data,
                             copy_data,

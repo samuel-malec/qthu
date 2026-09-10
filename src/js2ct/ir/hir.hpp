@@ -2,9 +2,10 @@
  
 #include <cstdint>
 #include <optional>
+#include <string_view>
 #include <variant>
 #include <vector>
- 
+
 #include "../sema/types.hpp"
 #include "../sema/analysis.hpp"
  
@@ -18,16 +19,18 @@ struct expr
 {
     struct int_lit    { std::uint64_t value; };
     struct bool_lit   { bool value; };
+    struct str_lit    { std::string_view value; };
     struct var        { sema::binding_id id; };
     struct unary      { op_kind op; expr_id sub; };
     struct binary     { op_kind op; expr_id left; expr_id right; };
     struct assign     { sema::binding_id target; expr_id value; };
     struct call       { sema::function_id target; std::vector< expr_id > args; };
- 
+
     type typ;
     std::variant<
         int_lit,
         bool_lit,
+        str_lit,
         var,
         unary,
         binary,

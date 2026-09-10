@@ -79,6 +79,12 @@ struct hir_to_linear
             sink.push_back( instr{ lin::cons_data{ .c = lit->value, .target = target } } );
             return target;
         }
+        if ( auto* lit = std::get_if< hir::expr::str_lit >( &node.data ) )
+        {
+            value target = vn.fresh();
+            sink.push_back( instr{ str_cons_data{ .str = std::string( lit->value ), .target = target } } );
+            return target;
+        }
         if ( auto* v = std::get_if< hir::expr::var >( &node.data ) )
         {
             value fst = vn.fresh();

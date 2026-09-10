@@ -198,6 +198,12 @@ void pretty_printer::print_lin_instr( std::ostream& out, const lin::instr& i, in
         print_lin_constant( out, ud->c );
         out << '\n';
     }
+    else if ( auto* sd = std::get_if< lin::str_cons_data >( &i.data ) )
+    {
+        out << "[ cons ] ";
+        print_lin_value( out, sd->target );
+        out << " = \"" << sd->str << "\"\n";
+    }
     else if ( auto* u = std::get_if< lin::unary_data >( &i.data ) )
     {
         out << "[ unary ] ";
@@ -392,6 +398,10 @@ void pretty_printer::print_hir_expr( std::ostream& out, hir::function& fn, hir::
         {
             out << "[bool_lit:" << node.typ << "] " << ( lit.value ? "true" : "false" );
         },
+        [ & ]( const hir::expr::str_lit& lit )
+        {
+            out << "[str_lit:" << node.typ << "] \"" << lit.value << "\"";
+        },
         [ & ]( const hir::expr::var& v )
         {
             out << "[var:" << node.typ << "] " << "v" << v.id.value;
@@ -563,7 +573,9 @@ void print_insn( std::ostream& out, const cthu::insn& i )
 {
     out << "        " << i.structure << " " << i.operation;
 
-    if( !i.in.empty() )
+    if( i.literal )
+        out << " \"" << *i.literal << "\"";
+    else if( !i.in.empty() )
     {
         out << " ";
         print_names( out, i.in );

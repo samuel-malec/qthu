@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <map>
 #include <vector>
@@ -30,6 +31,7 @@ struct insn
     name operation;
     std::vector< name > in;
     std::vector< name > out;
+    std::optional< std::string > literal; // an inline string-literal operand, e.g. `cons_str "count" -> key`
 };
 
 struct function
