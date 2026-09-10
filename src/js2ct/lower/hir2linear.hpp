@@ -128,6 +128,14 @@ struct hir_to_linear
             sink.push_back( instr{ call_data{ c->target, std::move( args ), target } } );
             return target;
         }
+        if ( auto* m = std::get_if< hir::expr::member >( &node.data ) )
+        {
+            argument obj = lower_expr( sink, env, m->object );
+            argument key = lower_expr( sink, env, m->key );
+            value target = vn.fresh();
+            sink.push_back( instr{ get_data{ obj, key, target } } );
+            return target;
+        }
 
         assert( false );
     }

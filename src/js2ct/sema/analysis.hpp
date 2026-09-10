@@ -410,6 +410,11 @@ struct analyzer
             for ( auto& arg : c->args )
                 resolve_expr( *arg, curr_scope );
         }
+        else if ( auto* m = std::get_if< ast::member >( &e.data ) )
+        {
+            resolve_expr( *m->object, curr_scope );
+            resolve_expr( *m->key, curr_scope );
+        }
     }
 
     void resolve_block( ast::block& b, scope_id block_scope )

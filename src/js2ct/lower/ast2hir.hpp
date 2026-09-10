@@ -74,6 +74,13 @@ struct lowerer
             res.data = expr::call{ .target = fid, .args = std::move( args ) };
         }
 
+        else if ( auto* m = std::get_if< ast::member >( &e.data ) )
+        {
+            expr_id object = lower_expr( fc, *m->object );
+            expr_id key = lower_expr( fc, *m->key );
+            res.data = expr::member{ .object = object, .key = key };
+        }
+
         else
             assert( false && "unimplemented ast::expr kind in lower_expr" );
 

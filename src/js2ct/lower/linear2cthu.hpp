@@ -196,9 +196,12 @@ struct structure_builder
                 curr_fn.body.push_back( std::move( ins ) );
             }
 
+            else if ( auto* gd = std::get_if< lin::get_data >( &i.data ) )
+                emit( curr_fn, "jsvalue", "get", { gd->obj, gd->key }, { gd->target } );
+
             else if ( auto* u = std::get_if< lin::unary_data >( &i.data ) )
                 emit( curr_fn, "jsvalue", op_to_str( u->op ), { u->arg1 }, { u->target } );
-            
+
             else if ( auto* b = std::get_if< lin::binary_data >( &i.data ) )
                 emit( curr_fn, "jsvalue", op_to_str( b->op ), { b->arg1, b->arg2 }, { b->target } );
 

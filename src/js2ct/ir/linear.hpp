@@ -46,6 +46,13 @@ struct str_cons_data
     value target;
 };
 
+struct get_data
+{
+    argument obj;
+    argument key;
+    value target;
+};
+
 struct unary_data
 {
     op_kind op;
@@ -134,6 +141,7 @@ struct instr
                             if_data,
                             loop_data,
                             call_data,
+                            get_data,
                             ret_data,
                             brk_data,
                             cont_data >;
@@ -164,6 +172,11 @@ struct instr
             else if constexpr ( std::is_same_v< T, call_data > )
                 for ( auto& a : d.args )
                     visit_operand( a );
+            else if constexpr ( std::is_same_v< T, get_data > )
+            {
+                visit_operand( d.obj );
+                visit_operand( d.key );
+            }
             else if constexpr ( std::is_same_v< T, ret_data > )
             {
                 if ( d.arg )

@@ -112,6 +112,45 @@ namespace qthu::js2ct
                 continue;
             }
 
+            if ( match( cat::punct, "." ) )
+            {
+                location loc = e->loc;
+                fetch();
+                auto id = require( cat::ident );
+
+                ast::expr key{ .loc = id.loc, .data = ast::str_lit{ id.data } };
+                e = ast::expr{
+                    .loc = loc,
+                    .data = ast::member{
+                        .object = make_expr_ptr( std::move( e.value() ) ),
+                        .key = make_expr_ptr( std::move( key ) ),
+                        .computed = false,
+                    }
+                };
+                continue;
+            }
+
+            if ( match( cat::punct, "[" ) )
+            {
+                location loc = e->loc;
+                fetch();
+
+                auto key = parse_expr();
+                if ( !key )
+                    error( "Expected key expression inside [ ]" );
+                require( cat::punct, "]" );
+
+                e = ast::expr{
+                    .loc = loc,
+                    .data = ast::member{
+                        .object = make_expr_ptr( std::move( e.value() ) ),
+                        .key = make_expr_ptr( std::move( key.value() ) ),
+                        .computed = true,
+                    }
+                };
+                continue;
+            }
+
             if ( auto t = match_any( cat::punct, "++", "--" ) )
             {
                 fetch();

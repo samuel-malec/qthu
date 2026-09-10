@@ -61,8 +61,19 @@ struct assign
 
 struct call
 {
-    expr_ptr callee; 
+    expr_ptr callee;
     std::vector< expr_ptr > args;
+};
+
+// obj.x lowers with computed=false and key synthesized as a str_lit from
+// the identifier text; arr[expr] lowers with computed=true and key as
+// whatever expression was parsed -- computed is parse-time-only info
+// (get is key-uniform, P3's design), not carried past ast2hir.
+struct member
+{
+    expr_ptr object;
+    expr_ptr key;
+    bool computed;
 };
 
 struct expr
@@ -77,7 +88,8 @@ struct expr
         unary,
         binary,
         assign,
-        call
+        call,
+        member
     > data;
 };
 

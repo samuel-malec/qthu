@@ -25,6 +25,7 @@ struct expr
     struct binary     { op_kind op; expr_id left; expr_id right; };
     struct assign     { sema::binding_id target; expr_id value; };
     struct call       { sema::function_id target; std::vector< expr_id > args; };
+    struct member     { expr_id object; expr_id key; };
 
     type typ;
     std::variant<
@@ -35,7 +36,8 @@ struct expr
         unary,
         binary,
         assign,
-        call
+        call,
+        member
     > data;
 };
  

@@ -204,6 +204,16 @@ void pretty_printer::print_lin_instr( std::ostream& out, const lin::instr& i, in
         print_lin_value( out, sd->target );
         out << " = \"" << sd->str << "\"\n";
     }
+    else if ( auto* gd = std::get_if< lin::get_data >( &i.data ) )
+    {
+        out << "[ get ] ";
+        print_lin_value( out, gd->target );
+        out << " = ";
+        print_lin_argument( out, gd->obj );
+        out << "[";
+        print_lin_argument( out, gd->key );
+        out << "]\n";
+    }
     else if ( auto* u = std::get_if< lin::unary_data >( &i.data ) )
     {
         out << "[ unary ] ";
@@ -444,6 +454,15 @@ void pretty_printer::print_hir_expr( std::ostream& out, hir::function& fn, hir::
             }
             print_indent( out, depth );
             out << ")";
+        },
+        [ & ]( const hir::expr::member& m )
+        {
+            out << "[member:" << node.typ << "]\n";
+            print_indent( out, depth + 1 );
+            print_hir_expr( out, fn, m.object, depth + 1 );
+            out << "\n";
+            print_indent( out, depth + 1 );
+            print_hir_expr( out, fn, m.key, depth + 1 );
         },
     }, node.data );
 }
