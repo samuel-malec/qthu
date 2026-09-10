@@ -28,6 +28,10 @@ struct expr
     struct member     { expr_id object; expr_id key; };
     struct object_lit { std::vector< std::pair< std::string_view, expr_id > > props; };
     struct array_lit  { std::vector< expr_id > elements; };
+    // obj.x = v / arr[i] = v, single-level only: `object` names the
+    // binding being updated directly (not a general sub-expression) --
+    // matches the parser's own single-level restriction.
+    struct member_assign { sema::binding_id object; expr_id key; expr_id value; };
 
     type typ;
     std::variant<
@@ -41,7 +45,8 @@ struct expr
         call,
         member,
         object_lit,
-        array_lit
+        array_lit,
+        member_assign
     > data;
 };
  

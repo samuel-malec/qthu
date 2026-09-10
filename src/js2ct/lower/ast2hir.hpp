@@ -61,8 +61,22 @@ struct lowerer
 
         else if ( auto* a = std::get_if< ast::assign >( &e.data ) )
         {
-            expr_id value = lower_expr( fc, *a->value );
-            res.data = expr::assign{ .target = sema.assign_bindings.at( &e ), .value = value };
+            if ( std::holds_alternative< ast::var >( a->target ) )
+            {
+                expr_id value = lower_expr( fc, *a->value );
+                res.data = expr::assign{ .target = sema.assign_bindings.at( &e ), .value = value };
+            }
+            else
+            {
+                auto& m = std::get< ast::member >( a->target );
+                expr_id key = lower_expr( fc, *m.key );
+                expr_id value = lower_expr( fc, *a->value );
+                res.data = expr::member_assign{
+                    .object = sema.assign_bindings.at( &e ),
+                    .key = key,
+                    .value = value,
+                };
+            }
         }
 
         else if ( auto* c = std::get_if< ast::call >( &e.data ) )

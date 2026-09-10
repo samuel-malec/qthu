@@ -369,19 +369,46 @@ struct analyzer
         else if ( auto* a = std::get_if< ast::assign >( &e.data ) )
         {
             resolve_expr( *a->value, curr_scope );
-            auto sid = lookup( curr_scope, a->target.name );
-            if ( !sid )
-                error( e.loc, "unknown identifier '", a->target.name, "'" );
 
-            auto& sym = get_symbol( sid.value() );
-            if ( sym.kind != symbol::kind_t::variable )
-                error( e.loc, "invalid target of an assignment" );
+            if ( auto* v = std::get_if< ast::var >( &a->target ) )
+            {
+                auto sid = lookup( curr_scope, v->name );
+                if ( !sid )
+                    error( e.loc, "unknown identifier '", v->name, "'" );
 
-            result.assign_bindings[ &e ] = sym.binding.value();
+                auto& sym = get_symbol( sid.value() );
+                if ( sym.kind != symbol::kind_t::variable )
+                    error( e.loc, "invalid target of an assignment" );
 
-            auto& bi = get_binding( sym.binding.value() );
-            if ( bi.kind == ast::var_declaration::kind_t::constant )
-                error( e.loc, "can't assign to a const-qualified variable" );
+                result.assign_bindings[ &e ] = sym.binding.value();
+
+                auto& bi = get_binding( sym.binding.value() );
+                if ( bi.kind == ast::var_declaration::kind_t::constant )
+                    error( e.loc, "can't assign to a const-qualified variable" );
+            }
+            else
+            {
+                auto& m = std::get< ast::member >( a->target );
+                // Single-level only (the parser already enforces this): the
+                // member's own object must be a plain identifier, not
+                // another member expression.
+                auto& obj_var = std::get< ast::var >( m.object->data );
+
+                auto sid = lookup( curr_scope, obj_var.name );
+                if ( !sid )
+                    error( e.loc, "unknown identifier '", obj_var.name, "'" );
+
+                auto& sym = get_symbol( sid.value() );
+                if ( sym.kind != symbol::kind_t::variable )
+                    error( e.loc, "invalid target of an assignment" );
+
+                // Not const-checked: JS allows `const o = {}; o.x = 1;` --
+                // const only forbids rebinding `o` itself, not mutating
+                // what it points to.
+                result.assign_bindings[ &e ] = sym.binding.value();
+
+                resolve_expr( *m.key, curr_scope );
+            }
         }
         else if ( auto* c = std::get_if< ast::call >( &e.data ) )
         {

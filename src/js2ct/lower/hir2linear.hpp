@@ -174,6 +174,32 @@ struct hir_to_linear
 
             return arr;
         }
+        if ( auto* ma = std::get_if< hir::expr::member_assign >( &node.data ) )
+        {
+            // Evaluate key and value *before* reading the object's current
+            // binding value: either could itself reference the same
+            // binding (`o[o.a] = o.b`), and each such read dup+reassigns
+            // it in env -- reading `object` last guarantees we consume
+            // whatever the *latest* live reference is, not a stale one
+            // that's already been split by an intervening dup.
+            argument key = lower_expr( sink, env, ma->key );
+            argument val = lower_expr( sink, env, ma->value );
+
+            // set_data consumes its value operand, but a JS assignment
+            // expression evaluates to the right-hand value -- dup so one
+            // copy is stored and the other is this expression's result.
+            value val1 = vn.fresh();
+            value val2 = vn.fresh();
+            sink.push_back( instr{ dup_data{ .arg1 = val, .first = val1, .second = val2 } } );
+
+            argument obj = env.at( ma->object );
+
+            value new_obj = vn.fresh();
+            sink.push_back( instr{ set_data{ obj, key, val1, new_obj } } );
+            env.reassign( ma->object, new_obj );
+
+            return val2;
+        }
 
         assert( false );
     }

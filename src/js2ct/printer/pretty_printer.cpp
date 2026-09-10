@@ -14,6 +14,8 @@ void pretty_printer::print_ast_expr( std::ostream& out, ast::expr& e, int depth 
         out << "[ int_lit ] " << lit->value << '\n';
     else if ( auto* lit = std::get_if< ast::bool_lit>( &e.data ) )
         out << "[ bool_lit ] " << std::boolalpha << lit->value << '\n';
+    else if ( auto* lit = std::get_if< ast::str_lit >( &e.data ) )
+        out << "[ str_lit ] \"" << lit->value << "\"\n";
     else if ( auto* id = std::get_if< ast::var >( &e.data ) )
         out << "[ var ] " << id->name << '\n';
     else if ( auto* u = std::get_if< ast::unary >( &e.data ) )
@@ -32,7 +34,18 @@ void pretty_printer::print_ast_expr( std::ostream& out, ast::expr& e, int depth 
         out << "[ assign ]\n";
 
         pad( out, depth + 1 );
-        out << "[ target ] " << a->target.name << '\n';
+        out << "[ target ]\n";
+        if ( auto* v = std::get_if< ast::var >( &a->target ) )
+        {
+            pad( out, depth + 2 );
+            out << "[ var ] " << v->name << '\n';
+        }
+        else
+        {
+            auto& m = std::get< ast::member >( a->target );
+            print_ast_expr( out, *m.object, depth + 2 );
+            print_ast_expr( out, *m.key, depth + 2 );
+        }
 
         pad( out, depth + 1 );
         out << "[ value ]\n";
@@ -51,6 +64,28 @@ void pretty_printer::print_ast_expr( std::ostream& out, ast::expr& e, int depth 
 
         for ( auto& arg : c->args )
             print_ast_expr( out, *arg, depth + 2 );
+    }
+    else if ( auto* m = std::get_if< ast::member >( &e.data ) )
+    {
+        out << "[ member" << ( m->computed ? " computed" : "" ) << " ]\n";
+        print_ast_expr( out, *m->object, depth + 1 );
+        print_ast_expr( out, *m->key, depth + 1 );
+    }
+    else if ( auto* ol = std::get_if< ast::object_lit >( &e.data ) )
+    {
+        out << "[ object_lit ]\n";
+        for ( auto& [ key, val ] : ol->props )
+        {
+            pad( out, depth + 1 );
+            out << "[ prop ] " << key << '\n';
+            print_ast_expr( out, *val, depth + 2 );
+        }
+    }
+    else if ( auto* al = std::get_if< ast::array_lit >( &e.data ) )
+    {
+        out << "[ array_lit ]\n";
+        for ( auto& elem : al->elements )
+            print_ast_expr( out, *elem, depth + 1 );
     }
 }
 
@@ -524,6 +559,17 @@ void pretty_printer::print_hir_expr( std::ostream& out, hir::function& fn, hir::
             }
             print_indent( out, depth );
             out << "]";
+        },
+        [ & ]( const hir::expr::member_assign& ma )
+        {
+            out << "[member_assign:" << node.typ << "] v" << ma.object.value << "[\n";
+            print_indent( out, depth + 1 );
+            print_hir_expr( out, fn, ma.key, depth + 1 );
+            out << "\n";
+            print_indent( out, depth );
+            out << "] =\n";
+            print_indent( out, depth + 1 );
+            print_hir_expr( out, fn, ma.value, depth + 1 );
         },
     }, node.data );
 }

@@ -53,12 +53,6 @@ struct binary
     expr_ptr right;
 };
 
-struct assign
-{
-    var target;
-    expr_ptr value;
-};
-
 struct call
 {
     expr_ptr callee;
@@ -74,6 +68,16 @@ struct member
     expr_ptr object;
     expr_ptr key;
     bool computed;
+};
+
+// target is `var` for a plain `x = v`, or `member` for `obj.x = v` /
+// `arr[i] = v` -- single-level only: a member target's own `object` must
+// itself resolve to a `var` (checked in the parser), not another member
+// expression (`a.b.c = v` is out of scope for now).
+struct assign
+{
+    std::variant< var, member > target;
+    expr_ptr value;
 };
 
 // Plain identifier or string-literal keys only; computed keys ({[expr]: v})

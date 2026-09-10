@@ -407,18 +407,37 @@ namespace qthu::js2ct
 
             if ( t->data == "=" )
             {
-                auto* target_var = std::get_if< ast::var >( &e->data );
-                if ( !target_var )
-                    error( "Left-hand side of assignment must be an identifier" );
-
                 location loc = e->loc;
-                e = ast::expr{
-                    .loc = loc,
-                    .data = ast::assign{
-                        .target = *target_var,
-                        .value = make_expr_ptr( std::move( rhs.value() ) ),
-                    }
-                };
+
+                if ( auto* target_var = std::get_if< ast::var >( &e->data ) )
+                {
+                    e = ast::expr{
+                        .loc = loc,
+                        .data = ast::assign{
+                            .target = *target_var,
+                            .value = make_expr_ptr( std::move( rhs.value() ) ),
+                        }
+                    };
+                }
+                else if ( auto* target_member = std::get_if< ast::member >( &e->data ) )
+                {
+                    // Single-level only: the member's own object must
+                    // itself be a plain identifier, not another member
+                    // expression -- `a.b.c = v` is out of scope for now.
+                    if ( !std::holds_alternative< ast::var >( target_member->object->data ) )
+                        error( "Left-hand side of assignment must be an identifier or a single-level "
+                               "member access (obj.x = v, arr[i] = v) -- nested targets aren't supported yet" );
+
+                    e = ast::expr{
+                        .loc = loc,
+                        .data = ast::assign{
+                            .target = std::move( *target_member ),
+                            .value = make_expr_ptr( std::move( rhs.value() ) ),
+                        }
+                    };
+                }
+                else
+                    error( "Left-hand side of assignment must be an identifier or a member access" );
             }
             else
                 e = make_compound_assign( std::move( e.value() ), t->data, std::move( rhs.value() ) );
