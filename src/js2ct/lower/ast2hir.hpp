@@ -81,6 +81,22 @@ struct lowerer
             res.data = expr::member{ .object = object, .key = key };
         }
 
+        else if ( auto* ol = std::get_if< ast::object_lit >( &e.data ) )
+        {
+            std::vector< std::pair< std::string_view, expr_id > > props;
+            for ( auto& [ key, val ] : ol->props )
+                props.emplace_back( key, lower_expr( fc, *val ) );
+            res.data = expr::object_lit{ .props = std::move( props ) };
+        }
+
+        else if ( auto* al = std::get_if< ast::array_lit >( &e.data ) )
+        {
+            std::vector< expr_id > elements;
+            for ( auto& elem : al->elements )
+                elements.push_back( lower_expr( fc, *elem ) );
+            res.data = expr::array_lit{ .elements = std::move( elements ) };
+        }
+
         else
             assert( false && "unimplemented ast::expr kind in lower_expr" );
 

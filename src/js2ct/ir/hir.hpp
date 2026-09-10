@@ -26,6 +26,8 @@ struct expr
     struct assign     { sema::binding_id target; expr_id value; };
     struct call       { sema::function_id target; std::vector< expr_id > args; };
     struct member     { expr_id object; expr_id key; };
+    struct object_lit { std::vector< std::pair< std::string_view, expr_id > > props; };
+    struct array_lit  { std::vector< expr_id > elements; };
 
     type typ;
     std::variant<
@@ -37,7 +39,9 @@ struct expr
         binary,
         assign,
         call,
-        member
+        member,
+        object_lit,
+        array_lit
     > data;
 };
  

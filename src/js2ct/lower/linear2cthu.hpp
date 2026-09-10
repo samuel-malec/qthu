@@ -199,6 +199,15 @@ struct structure_builder
             else if ( auto* gd = std::get_if< lin::get_data >( &i.data ) )
                 emit( curr_fn, "jsvalue", "get", { gd->obj, gd->key }, { gd->target } );
 
+            else if ( auto* cod = std::get_if< lin::cons_obj_data >( &i.data ) )
+                emit( curr_fn, "jsvalue", "cons_obj", {}, { cod->target } );
+
+            else if ( auto* cad = std::get_if< lin::cons_arr_data >( &i.data ) )
+                emit( curr_fn, "jsvalue", "cons_arr", {}, { cad->target } );
+
+            else if ( auto* sd = std::get_if< lin::set_data >( &i.data ) )
+                emit( curr_fn, "jsvalue", "set", { sd->obj, sd->key, sd->val }, { sd->target } );
+
             else if ( auto* u = std::get_if< lin::unary_data >( &i.data ) )
                 emit( curr_fn, "jsvalue", op_to_str( u->op ), { u->arg1 }, { u->target } );
 

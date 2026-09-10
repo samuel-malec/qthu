@@ -214,6 +214,30 @@ void pretty_printer::print_lin_instr( std::ostream& out, const lin::instr& i, in
         print_lin_argument( out, gd->key );
         out << "]\n";
     }
+    else if ( auto* cod = std::get_if< lin::cons_obj_data >( &i.data ) )
+    {
+        out << "[ cons_obj ] ";
+        print_lin_value( out, cod->target );
+        out << " = {}\n";
+    }
+    else if ( auto* cad = std::get_if< lin::cons_arr_data >( &i.data ) )
+    {
+        out << "[ cons_arr ] ";
+        print_lin_value( out, cad->target );
+        out << " = []\n";
+    }
+    else if ( auto* sd = std::get_if< lin::set_data >( &i.data ) )
+    {
+        out << "[ set ] ";
+        print_lin_value( out, sd->target );
+        out << " = ";
+        print_lin_argument( out, sd->obj );
+        out << "[";
+        print_lin_argument( out, sd->key );
+        out << "] = ";
+        print_lin_argument( out, sd->val );
+        out << '\n';
+    }
     else if ( auto* u = std::get_if< lin::unary_data >( &i.data ) )
     {
         out << "[ unary ] ";
@@ -463,6 +487,43 @@ void pretty_printer::print_hir_expr( std::ostream& out, hir::function& fn, hir::
             out << "\n";
             print_indent( out, depth + 1 );
             print_hir_expr( out, fn, m.key, depth + 1 );
+        },
+        [ & ]( const hir::expr::object_lit& ol )
+        {
+            out << "[object_lit:" << node.typ << "] {";
+            if ( ol.props.empty() )
+            {
+                out << "}";
+                return;
+            }
+            out << "\n";
+            for ( size_t i = 0; i < ol.props.size(); ++i )
+            {
+                print_indent( out, depth + 1 );
+                out << ol.props[ i ].first << ": ";
+                print_hir_expr( out, fn, ol.props[ i ].second, depth + 1 );
+                out << ( i + 1 != ol.props.size() ? ",\n" : "\n" );
+            }
+            print_indent( out, depth );
+            out << "}";
+        },
+        [ & ]( const hir::expr::array_lit& al )
+        {
+            out << "[array_lit:" << node.typ << "] [";
+            if ( al.elements.empty() )
+            {
+                out << "]";
+                return;
+            }
+            out << "\n";
+            for ( size_t i = 0; i < al.elements.size(); ++i )
+            {
+                print_indent( out, depth + 1 );
+                print_hir_expr( out, fn, al.elements[ i ], depth + 1 );
+                out << ( i + 1 != al.elements.size() ? ",\n" : "\n" );
+            }
+            print_indent( out, depth );
+            out << "]";
         },
     }, node.data );
 }

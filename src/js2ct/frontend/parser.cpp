@@ -73,6 +73,70 @@ namespace qthu::js2ct
             return ast::expr{ .loc = tok.loc, .data = ast::var{ tok.data } };
         }
 
+        if ( match( cat::punct, "{" ) )
+        {
+            location loc = fetch().loc;
+            ast::object_lit obj{};
+
+            if ( !match( cat::punct, "}" ) )
+            {
+                while ( true )
+                {
+                    std::string_view key;
+                    if ( match( cat::ident ) || match( cat::str ) )
+                        key = fetch().data;
+                    else
+                        error( "Expected property key (identifier or string)" );
+
+                    require( cat::punct, ":" );
+
+                    auto value = parse_expr();
+                    if ( !value )
+                        error( "Expected property value" );
+
+                    obj.props.emplace_back( key, make_expr_ptr( std::move( value.value() ) ) );
+
+                    if ( !match( cat::punct, "," ) )
+                        break;
+                    fetch();
+
+                    if ( match( cat::punct, "}" ) )
+                        break;
+                }
+            }
+
+            require( cat::punct, "}" );
+            return ast::expr{ .loc = loc, .data = std::move( obj ) };
+        }
+
+        if ( match( cat::punct, "[" ) )
+        {
+            location loc = fetch().loc;
+            ast::array_lit arr{};
+
+            if ( !match( cat::punct, "]" ) )
+            {
+                while ( true )
+                {
+                    auto elem = parse_expr();
+                    if ( !elem )
+                        error( "Expected array element" );
+
+                    arr.elements.push_back( make_expr_ptr( std::move( elem.value() ) ) );
+
+                    if ( !match( cat::punct, "," ) )
+                        break;
+                    fetch();
+
+                    if ( match( cat::punct, "]" ) )
+                        break;
+                }
+            }
+
+            require( cat::punct, "]" );
+            return ast::expr{ .loc = loc, .data = std::move( arr ) };
+        }
+
         return {};
     }
 

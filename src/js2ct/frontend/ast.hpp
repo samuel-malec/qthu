@@ -76,6 +76,18 @@ struct member
     bool computed;
 };
 
+// Plain identifier or string-literal keys only; computed keys ({[expr]: v})
+// are out of scope for now.
+struct object_lit
+{
+    std::vector< std::pair< std::string_view, expr_ptr > > props;
+};
+
+struct array_lit
+{
+    std::vector< expr_ptr > elements;
+};
+
 struct expr
 {
     location loc;
@@ -89,6 +101,8 @@ struct expr
         binary,
         assign,
         call,
+        object_lit,
+        array_lit,
         member
     > data;
 };

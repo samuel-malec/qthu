@@ -415,6 +415,16 @@ struct analyzer
             resolve_expr( *m->object, curr_scope );
             resolve_expr( *m->key, curr_scope );
         }
+        else if ( auto* ol = std::get_if< ast::object_lit >( &e.data ) )
+        {
+            for ( auto& [ key, val ] : ol->props )
+                resolve_expr( *val, curr_scope );
+        }
+        else if ( auto* al = std::get_if< ast::array_lit >( &e.data ) )
+        {
+            for ( auto& elem : al->elements )
+                resolve_expr( *elem, curr_scope );
+        }
     }
 
     void resolve_block( ast::block& b, scope_id block_scope )

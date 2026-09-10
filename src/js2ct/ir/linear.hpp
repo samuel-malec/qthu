@@ -53,6 +53,27 @@ struct get_data
     value target;
 };
 
+struct cons_obj_data
+{
+    value target;
+};
+
+struct cons_arr_data
+{
+    value target;
+};
+
+// obj[key] = val, producing the (linear) updated object -- the field is
+// named `val`, not `value`, so it doesn't shadow the `value` type name
+// needed for `target`'s own declaration right below it.
+struct set_data
+{
+    argument obj;
+    argument key;
+    argument val;
+    value target;
+};
+
 struct unary_data
 {
     op_kind op;
@@ -142,6 +163,9 @@ struct instr
                             loop_data,
                             call_data,
                             get_data,
+                            cons_obj_data,
+                            cons_arr_data,
+                            set_data,
                             ret_data,
                             brk_data,
                             cont_data >;
@@ -176,6 +200,12 @@ struct instr
             {
                 visit_operand( d.obj );
                 visit_operand( d.key );
+            }
+            else if constexpr ( std::is_same_v< T, set_data > )
+            {
+                visit_operand( d.obj );
+                visit_operand( d.key );
+                visit_operand( d.val );
             }
             else if constexpr ( std::is_same_v< T, ret_data > )
             {

@@ -136,6 +136,44 @@ struct hir_to_linear
             sink.push_back( instr{ get_data{ obj, key, target } } );
             return target;
         }
+        if ( auto* ol = std::get_if< hir::expr::object_lit >( &node.data ) )
+        {
+            value obj = vn.fresh();
+            sink.push_back( instr{ cons_obj_data{ obj } } );
+
+            for ( auto& [ key, val_id ] : ol->props )
+            {
+                value key_val = vn.fresh();
+                sink.push_back( instr{ str_cons_data{ std::string( key ), key_val } } );
+
+                argument val = lower_expr( sink, env, val_id );
+
+                value next_obj = vn.fresh();
+                sink.push_back( instr{ set_data{ obj, key_val, val, next_obj } } );
+                obj = next_obj;
+            }
+
+            return obj;
+        }
+        if ( auto* al = std::get_if< hir::expr::array_lit >( &node.data ) )
+        {
+            value arr = vn.fresh();
+            sink.push_back( instr{ cons_arr_data{ arr } } );
+
+            for ( size_t idx = 0; idx < al->elements.size(); ++idx )
+            {
+                value key_val = vn.fresh();
+                sink.push_back( instr{ cons_data{ .c = static_cast< uint64_t >( idx ), .target = key_val } } );
+
+                argument val = lower_expr( sink, env, al->elements[ idx ] );
+
+                value next_arr = vn.fresh();
+                sink.push_back( instr{ set_data{ arr, key_val, val, next_arr } } );
+                arr = next_arr;
+            }
+
+            return arr;
+        }
 
         assert( false );
     }
