@@ -330,6 +330,9 @@ namespace qthu::js2ct::lin {
                         .outputs = std::move(outputs)
                     }
                 });
+            } else if (auto *as = std::get_if<hir::stmt::assert_stmt>(&node.data)) {
+                argument arg = lower_expr(sink, env, as->arg);
+                sink.push_back(instr{assert_data{arg}});
             } else if (std::get_if<hir::stmt::brk>(&node.data))
                 assert(false && "unimplemented");
 

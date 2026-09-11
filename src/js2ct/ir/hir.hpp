@@ -120,6 +120,15 @@ namespace qthu::js2ct::hir {
         struct cont {
         };
 
+        // assert(expr); -- recognized syntactically as a call to the
+        // magic, never-declared name "assert" in statement position
+        // (ast2hir.hpp), not a real function call: sema/analysis.hpp's
+        // call resolution skips the normal "must be a declared function"
+        // check for this one name. Lowers straight to qjs_val_assert.
+        struct assert_stmt {
+            expr_id arg;
+        };
+
         std::variant<
             expr_stmt,
             block,
@@ -128,7 +137,8 @@ namespace qthu::js2ct::hir {
             loop_stmt,
             ret_stmt,
             brk,
-            cont
+            cont,
+            assert_stmt
         > data;
     };
 

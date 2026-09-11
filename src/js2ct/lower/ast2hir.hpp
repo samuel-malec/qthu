@@ -177,6 +177,17 @@ namespace qthu::js2ct::hir {
                 return make_block(fc, std::move(outer));
             }
             if (auto *es = std::get_if<ast::expr_stmt>(&s.data)) {
+                // Recognized purely syntactically here, not via a call to
+                // sema (which already knows not to resolve "assert" as a
+                // declared function -- see analysis.hpp's call case).
+                if (auto *call = std::get_if<ast::call>(&es->value.data)) {
+                    if (auto *callee_var = std::get_if<ast::var>(&call->callee->data);
+                        callee_var && callee_var->name == "assert") {
+                        expr_id arg = lower_expr(fc, *call->args[0]);
+                        return append_stmt(fc, stmt{.data = stmt::assert_stmt{arg}});
+                    }
+                }
+
                 expr_id e = lower_expr(fc, es->value);
                 return append_stmt(fc, stmt{.data = stmt::expr_stmt{e}});
             }

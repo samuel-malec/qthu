@@ -271,6 +271,10 @@ namespace qthu::js2ct::print {
                 print_lin_argument(out, *r->arg);
 
             out << '\n';
+        } else if (auto *ad = std::get_if<lin::assert_data>(&i.data)) {
+            out << "[ assert ] ";
+            print_lin_argument(out, ad->arg);
+            out << '\n';
         } else if (auto *id = std::get_if<lin::if_data>(&i.data)) {
             out << "[ if ]\n";
 
@@ -548,6 +552,12 @@ namespace qthu::js2ct::print {
                            [ & ](const hir::stmt::cont &) {
                                print_indent(out, depth);
                                out << "[cont] continue;\n";
+                           },
+                           [ & ](const hir::stmt::assert_stmt &st) {
+                               print_indent(out, depth);
+                               out << "[assert_stmt] assert( ";
+                               print_hir_expr(out, fn, st.arg, depth);
+                               out << " );\n";
                            },
                        }, node.data);
         };

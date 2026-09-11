@@ -371,6 +371,19 @@ namespace qthu::js2ct::sema {
                     error(e.loc, "expected an identifier");
 
                 auto &calle_name = std::get<ast::var>(callee_ptr->data);
+
+                // assert(...) is a magic, never-declared compiler builtin
+                // (ast2hir.hpp recognizes it syntactically in statement
+                // position and lowers it to hir::stmt::assert_stmt instead
+                // of a real call) -- skip the "must be a declared function"
+                // check for this one name; just resolve its argument.
+                if (calle_name.name == "assert") {
+                    if (c->args.size() != 1)
+                        error(e.loc, "assert() takes exactly one argument");
+                    resolve_expr(*c->args[0], curr_scope);
+                    return;
+                }
+
                 auto sid = lookup(curr_scope, calle_name.name);
                 if (!sid)
                     error(e.loc, "undecared identifier");

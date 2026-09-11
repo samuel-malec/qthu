@@ -297,7 +297,9 @@ namespace qthu::js2ct::cthu {
                     // what to do with functions that don't "return" anything ?
                     if (r->arg)
                         emit(curr_fn, "jsvalue", "move", args2str({r->arg.value()}), {"out"});
-                } else if (auto *dr = std::get_if<lin::drop_data>(&i.data)) {
+                } else if (auto *ad = std::get_if<lin::assert_data>(&i.data))
+                    emit(curr_fn, "jsvalue", "assert", args2str({ad->arg}), {});
+                else if (auto *dr = std::get_if<lin::drop_data>(&i.data)) {
                 } else if (auto *c = std::get_if<lin::call_data>(&i.data)) {
                     std::string callee_struct = sema.function_name(c->callee);
                     std::string f_ref = fresh_val("f_ref");

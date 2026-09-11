@@ -160,6 +160,12 @@ namespace qthu::js2ct::lin {
     struct cont_data {
     };
 
+    // No target: consumes its argument, produces nothing (matches
+    // qjs_val_assert's own signature).
+    struct assert_data {
+        argument arg;
+    };
+
     struct instr {
         using data_type = std::variant<
             cons_data,
@@ -177,6 +183,7 @@ namespace qthu::js2ct::lin {
             cons_arr_data,
             set_data,
             ret_data,
+            assert_data,
             brk_data,
             cont_data>;
         data_type data;
@@ -211,7 +218,8 @@ namespace qthu::js2ct::lin {
                 } else if constexpr (std::is_same_v<T, ret_data>) {
                     if (d.arg)
                         visit_operand(*d.arg);
-                }
+                } else if constexpr (std::is_same_v<T, assert_data>)
+                    visit_operand(d.arg);
             }, data);
         }
 
