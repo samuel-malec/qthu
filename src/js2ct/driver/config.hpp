@@ -15,6 +15,7 @@ namespace qthu::js2ct {
         bool emit_hir;
         bool emit_cthu;
         bool emit_lin;
+        bool parse_only;
     };
 
     inline void help() {
@@ -23,7 +24,8 @@ namespace qthu::js2ct {
                 << "--emit-ast\n"
                 << "--emit-hir\n"
                 << "--emit-linir\n"
-                << "--emit-ct\n";
+                << "--emit-ct\n"
+                << "--parse-only    stop after parsing (skip sema/HIR/LIN/codegen)\n";
     }
 
     inline config parse_config(int argc, char *const*argv) {
@@ -47,6 +49,7 @@ namespace qthu::js2ct {
         bool _emit_cthu = false;
         bool _emit_hir = false;
         bool _emit_lin = false;
+        bool _parse_only = false;
 
         for (int i = 1; i < argc; ++i) {
             if (strcmp(argv[i], "-o") == 0) {
@@ -73,6 +76,10 @@ namespace qthu::js2ct {
                 _emit_cthu = true;
                 continue;
             }
+            if (strcmp(argv[i], "--parse-only") == 0) {
+                _parse_only = true;
+                continue;
+            }
 
             throw std::runtime_error("invalid flag");
         }
@@ -83,7 +90,8 @@ namespace qthu::js2ct {
             .emit_ast = _emit_ast,
             .emit_hir = _emit_hir,
             .emit_cthu = _emit_cthu,
-            .emit_lin = _emit_lin
+            .emit_lin = _emit_lin,
+            .parse_only = _parse_only
         };
     }
 } // namespace qthu::js2ct

@@ -11,6 +11,6 @@ function fib_base(n) {
     return fib_rec(1, 1, n - 2);
 }
 
-function main() {
+function run() {
     return fib_base(11);
 }

@@ -26,6 +26,9 @@ namespace qthu::js2ct {
             if (conf.emit_ast)
                 printer.print_ast(std::cout, ast);
 
+            if (conf.parse_only)
+                return;
+
             sema::analyzer analyzer;
             auto semantics = analyzer.run(ast);
 

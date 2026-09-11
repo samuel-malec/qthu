@@ -7,7 +7,8 @@ namespace qthu::js2ct {
     using cat = token::cat_t;
 
     ast::expr parser::make_increment_expr(ast::expr target, bool is_incr) {
-        assert(false && "TODO: implement this inside HIR");
+        error(is_incr ? "'++' is not supported yet" : "'--' is not supported yet");
+        return target;
     }
 
     ast::expr parser::make_compound_assign(ast::expr lhs, std::string_view compound_op, ast::expr rhs) {

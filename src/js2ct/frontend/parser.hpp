@@ -97,7 +97,9 @@ namespace qthu::js2ct {
             if (current.cat != cat::invalid)
                 return current;
 
-            assert(!lex.empty());
+            if (lex.empty())
+                error("unexpected end of input");
+
             while (!lex.empty() && current.cat == cat::invalid)
                 lex.next();
 

@@ -65,12 +65,18 @@ namespace qthu::js2ct::cthu {
                 case LEQ: return "le?";
                 case GT: return "gt?";
                 case GEQ: return "ge?";
-                default:
-                    assert(false && "unimplemented");
+                case SHL: return "shl";
+                case SHR: return "shr";
+                case NOT: return "not";
+                case AND:
+                case OR:
+                    throw std::runtime_error(
+                        "'&&'/'||' are not supported yet -- they need short-circuit "
+                        "lowering (the same hoisting non-tail 'if' uses), not a plain "
+                        "binary op; see Claude.md's 'not yet covered' list");
             }
 
-            assert(false && "unimplemented");
-            return "";
+            throw std::runtime_error("op_to_str: unhandled op_kind");
         }
 
         std::string compact_run(char c, size_t k) {
