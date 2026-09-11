@@ -96,6 +96,22 @@ namespace qthu::ct2qjs
             return;
         }
 
+        // copy :: T -> T. Bytecode-identical to move (read the input slot,
+        // write it to the output slot -- get_loc's own JS_DupValue is the
+        // only "copy" happening, same as everywhere else a value is read)
+        // but kept as its own case rather than aliased to qjs_val_move:
+        // js2ct emits copy specifically for reassigning an *existing*
+        // variable (hir2linear.hpp's `assign` case), always preceded by an
+        // explicit `drop` of the slot being overwritten -- move is a plain
+        // rename of a fresh linear value with no such drop. Same bytecode,
+        // different meaning at the .ct level.
+        if ( name == "qjs_val_copy" )
+        {
+            get1( insn );
+            builder.add_instr( qthu::as::put_loc_( insn.slots_out[ 0 ] ) );
+            return;
+        }
+
         // push :: stack(array) x value -> stack. A "stack" is just a
         // jsvalue array (same representation cons_arr/get/set already use);
         // arr[arr.length] = value is a normal JS array-growing write, so

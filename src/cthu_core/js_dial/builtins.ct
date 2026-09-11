@@ -3,6 +3,7 @@ structure jsvalue : arithmetic[ jsvalue, stck, bool ], bitwise[ jsvalue ]
     dup    = qjs_val_dup
     drop   = qjs_val_drop
     move   = qjs_val_move
+    copy   = qjs_val_copy
     join   = qjs_val_join
     bot    = qjs_val_bot
     top    = qjs_val_top
