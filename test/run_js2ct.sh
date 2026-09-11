@@ -1,16 +1,20 @@
 #!/usr/bin/env bash
 #
-# Compiles and runs every .ct fixture under test/ct2qjs/ through ct2qjs and bcrun
+# Compiles and runs every .js fixture under test/js2ct/e2e/ through the
+# complete pipeline: js2ct (JS -> Cthulhu IR) -> ct2qjs (IR -> QuickJS
+# bytecode) -> bcrun. Each fixture self-verifies with assert(); a failing
+# assert (or a compile error at either stage) fails the fixture.
 #
-# Usage: test/run.sh
+# Usage: test/run_js2ct.sh
 # Override the binaries with env vars if they're not in one of the usual
-# build directories: CT2QJS=/path/to/ct2qjs BCRUN=/path/to/bcrun test/run.sh
+# build directories:
+#   JS2CT=/path/to/js2ct CT2QJS=/path/to/ct2qjs BCRUN=/path/to/bcrun test/run_js2ct.sh
 
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-TEST_DIR="$REPO_ROOT/test/ct2qjs"
+TEST_DIR="$REPO_ROOT/test/js2ct/e2e"
 PRELUDE_DIR="$REPO_ROOT/src/cthu_core/js_dial"
 
 find_bin()
@@ -42,6 +46,10 @@ find_bin()
     return 1
 }
 
+JS2CT_BIN="$(find_bin js2ct "${JS2CT:-}")" || {
+    echo "error: could not find a built 'js2ct' binary. Build it first, or point to it with JS2CT=/path/to/js2ct" >&2
+    exit 2
+}
 CT2QJS_BIN="$(find_bin ct2qjs "${CT2QJS:-}")" || {
     echo "error: could not find a built 'ct2qjs' binary. Build it first, or point to it with CT2QJS=/path/to/ct2qjs" >&2
     exit 2
@@ -56,24 +64,34 @@ fail=0
 fail_names=()
 
 shopt -s nullglob
-ct_files=("$TEST_DIR"/*.ct)
+js_files=("$TEST_DIR"/*.js)
 shopt -u nullglob
 
-if [[ ${#ct_files[@]} -eq 0 ]]; then
-    echo "no .ct fixtures found under $TEST_DIR"
+if [[ ${#js_files[@]} -eq 0 ]]; then
+    echo "no .js fixtures found under $TEST_DIR"
     exit 2
 fi
 
-for ct_file in "${ct_files[@]}"; do
-    name="$(basename "$ct_file")"
+for js_file in "${js_files[@]}"; do
+    name="$(basename "$js_file")"
+    tmp_ct="$(mktemp)"
     tmp_qbc="$(mktemp)"
 
-    if ! compile_out="$("$CT2QJS_BIN" "$ct_file" -p "$PRELUDE_DIR" -o "$tmp_qbc" 2>&1)"; then
-        echo "FAIL  $name  (compile error)"
+    if ! lower_out="$("$JS2CT_BIN" "$js_file" -o "$tmp_ct" 2>&1)"; then
+        echo "FAIL  $name  (js2ct: JS -> Cthulhu IR failed)"
+        echo "$lower_out" | sed 's/^/        /'
+        fail=$((fail + 1))
+        fail_names+=("$name")
+        rm -f "$tmp_ct" "$tmp_qbc"
+        continue
+    fi
+
+    if ! compile_out="$("$CT2QJS_BIN" "$tmp_ct" -p "$PRELUDE_DIR" -o "$tmp_qbc" 2>&1)"; then
+        echo "FAIL  $name  (ct2qjs: Cthulhu IR -> bytecode failed)"
         echo "$compile_out" | sed 's/^/        /'
         fail=$((fail + 1))
         fail_names+=("$name")
-        rm -f "$tmp_qbc"
+        rm -f "$tmp_ct" "$tmp_qbc"
         continue
     fi
 
@@ -86,7 +104,7 @@ for ct_file in "${ct_files[@]}"; do
         fail_names+=("$name")
     fi
 
-    rm -f "$tmp_qbc"
+    rm -f "$tmp_ct" "$tmp_qbc"
 done
 
 echo
