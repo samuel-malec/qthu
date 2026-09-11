@@ -62,10 +62,11 @@ structure run
         jsvalue drop → %2
         jsvalue copy %4 → %2
         jsvalue dup %2 → %5 %6
-        jsvalue cons_2 → %7
-        jsvalue eq? %5 %7 → %8
-        jsvalue assert %8
-        jsvalue drop → %6
+        jsvalue dup %6 → %7 %8
+        jsvalue cons_2 → %9
+        jsvalue eq? %7 %9 → %10
+        jsvalue assert %10
+        jsvalue drop → %8
     )
 )
 ```
@@ -85,10 +86,17 @@ reassignment itself — explicitly release the old value held under that
 name, then claim the new one under it. This `drop`-then-`copy` pair (not
 `move`, which only ever happens once, at a name's birth) is exactly what
 distinguishes *re*assigning a binding from introducing a fresh one in
-this IR — see `PLAN.md` P6.9. The final `assert(x == 2)` reads `x` (now
-`%2`) the same way any read does: `dup` first, since the compiler doesn't
-do liveness analysis to know `x` won't be read again — the unused second
-copy (`%6`) is just `drop`ped at the end.
+this IR — see `PLAN.md` P6.9.
+
+The next line, `dup %2 → %5 %6`, is there because a JS assignment is
+*also an expression* — `x = x + 1` evaluates to the assigned value, here
+just discarded since this one's a bare statement, but the compiler can't
+assume that in general (`let y = (x = x + 1);` needs it). That returned
+value and `x`'s own name going forward both start out as the same
+freshly-written slot (`%2`), so they're split the same way any read of a
+variable already is: `%5` becomes the assignment-expression's disposable
+result, `%6` becomes `x`'s new live name — without this split, something
+that consumed the assignment's result directly.
 
 ## 2. Mutating a field without reassigning the variable — `field_mutation`
 
@@ -394,13 +402,15 @@ structure sumArray
         jsvalue add %9 %15 → %16
         jsvalue drop → %10
         jsvalue copy %16 → %10
-        jsvalue dup %14 → %17 %18
-        jsvalue cons_1 → %19
-        jsvalue add %17 %19 → %20
-        jsvalue drop → %18
-        jsvalue copy %20 → %18
+        jsvalue dup %10 → %17 %18
+        jsvalue dup %14 → %19 %20
+        jsvalue cons_1 → %21
+        jsvalue add %19 %21 → %22
+        jsvalue drop → %20
+        jsvalue copy %22 → %20
+        jsvalue dup %20 → %23 %24
         sumArray loop1 → self14
-        f_j4_j call self14 %10 %18 %1 %12 → packed
+        f_j4_j call self14 %18 %24 %1 %12 → packed
     )
     loopexit3 = λ %3 %2 %1 %0 → arr13
     (
@@ -432,21 +442,21 @@ structure sumArray
         f_j4_j call ref27 %3 %2 %1 %0 → packed28
         jsvalue dup packed28 → u29 u30
         jsvalue cons_0 → k31
-        jsvalue get u29 k31 → %21
+        jsvalue get u29 k31 → %25
         jsvalue dup u30 → u32 u33
         jsvalue cons_1 → k34
-        jsvalue get u32 k34 → %22
+        jsvalue get u32 k34 → %26
         jsvalue dup u33 → u35 u36
         jsvalue cons_2 → k37
-        jsvalue get u35 k37 → %23
+        jsvalue get u35 k37 → %27
         jsvalue cons_3 → k38
-        jsvalue get u36 k38 → %24
-        jsvalue dup %21 → %25 %26
-        jsvalue move %25 → out
+        jsvalue get u36 k38 → %28
+        jsvalue dup %25 → %29 %30
+        jsvalue move %29 → out
+        jsvalue drop → %30
         jsvalue drop → %26
-        jsvalue drop → %22
-        jsvalue drop → %23
-        jsvalue drop → %24
+        jsvalue drop → %27
+        jsvalue drop → %28
     )
 )
 structure run
@@ -498,19 +508,11 @@ closure in the loop packs its four live values into one array before
 returning (`loopexit3`'s `cons_arr`/`set` chain), and unpacks it again
 wherever an individual value is needed next (`run`'s trailing `dup`/`get`
 chain). `n`/`i`/`arr` are dead once the loop exits, so `run` just `drop`s
-them after unpacking and keeps `total` (`%21`). This packing is the fix
+them after unpacking and keeps `total` (`%25`). This packing is the fix
 for a real bug found while building an earlier, hand-written version of
 this same example (`PLAN.md`'s P2.5): an earlier codegen path declared
 separate outputs directly on the call and silently wrote only the first
 one — exactly the kind of bug a single passing run won't reveal.
-
-Also visible here for the first time: `loopbody2`'s `jsvalue drop → %10`
-/ `jsvalue copy %16 → %10` pair, right after computing the new `total`.
-That's `qjs_val_copy` (`PLAN.md` P6.9) — JS's `total = total + arr[i]`
-reassigns an *existing* binding, which lowers as drop-the-old-value then
-copy-the-new-value-into-that-slot, distinct from `move` (used for a
-fresh `let`). Before this was implemented, `sumArray`'s literal source
-couldn't compile through `js2ct` at all.
 
 ## 6. A loop that mutates an object field — `counter`
 
@@ -594,8 +596,9 @@ structure incrementBy
         jsvalue add %18 %20 → %21
         jsvalue drop → %19
         jsvalue copy %21 → %19
+        jsvalue dup %19 → %22 %23
         incrementBy loop1 → self12
-        f_j3_j call self12 %19 %1 %17 → packed
+        f_j3_j call self12 %23 %1 %17 → packed
     )
     loopexit3 = λ %2 %1 %0 → arr11
     (
@@ -623,17 +626,17 @@ structure incrementBy
         f_j3_j call ref25 %2 %1 %0 → packed26
         jsvalue dup packed26 → u27 u28
         jsvalue cons_0 → k29
-        jsvalue get u27 k29 → %22
+        jsvalue get u27 k29 → %24
         jsvalue dup u28 → u30 u31
         jsvalue cons_1 → k32
-        jsvalue get u30 k32 → %23
+        jsvalue get u30 k32 → %25
         jsvalue cons_2 → k33
-        jsvalue get u31 k33 → %24
-        jsvalue dup %24 → %25 %26
-        jsvalue move %25 → out
-        jsvalue drop → %22
-        jsvalue drop → %23
-        jsvalue drop → %26
+        jsvalue get u31 k33 → %26
+        jsvalue dup %26 → %27 %28
+        jsvalue move %27 → out
+        jsvalue drop → %24
+        jsvalue drop → %25
+        jsvalue drop → %28
     )
 )
 structure run
@@ -649,12 +652,13 @@ structure run
         jsvalue drop → %2
         jsvalue copy %4 → %2
         jsvalue dup %2 → %5 %6
-        jsvalue cons_str "count" → %7
-        jsvalue get %5 %7 → %8
-        jsvalue cons_5 → %9
-        jsvalue eq? %8 %9 → %10
-        jsvalue assert %10
-        jsvalue drop → %6
+        jsvalue dup %6 → %7 %8
+        jsvalue cons_str "count" → %9
+        jsvalue get %7 %9 → %10
+        jsvalue cons_5 → %11
+        jsvalue eq? %10 %11 → %12
+        jsvalue assert %12
+        jsvalue drop → %8
     )
 )
 ```
@@ -669,8 +673,4 @@ chains two calls — `makeCounter` then `incrementBy` — and its own
 `c = incrementBy(c, 5);` is `qjs_val_copy` again, visible as `jsvalue
 drop → %2` / `jsvalue copy %4 → %2` right after the call: `c` is an
 *existing* binding being reassigned to the call's result, not a fresh
-`let`. The object survives a full round trip through construction, five
-loop iterations of field mutation, a reassignment, and a final field
-read, unchanged in identity throughout (QuickJS's `dup` opcode is a
-refcount increment for heap values, not a copy — the same mechanism that
-makes any of this work with zero new `cthu` types).
+`let`. 

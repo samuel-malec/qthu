@@ -34,6 +34,10 @@ namespace qthu::js2ct::lin {
         bool has(sema::binding_id bid) const {
             return scope.contains(bid.value);
         }
+
+        void forget(sema::binding_id bid) {
+            scope.erase(bid.value);
+        }
     };
 
     struct value_namer {
@@ -47,137 +51,210 @@ namespace qthu::js2ct::lin {
     struct hir_to_linear {
         hir::function &fn;
         sema::analysis_result &sema;
+
+        uint32_t next_synth_binding = static_cast<uint32_t>(sema.bindings.size());
         value_namer vn;
 
-        void clean_scope() {
-            // TODO:
-            // This should pop, and drop all the vars that are live still
+        sema::binding_id fresh_binding() {
+            return sema::binding_id{next_synth_binding++};
         }
 
         argument lower_expr(std::vector<instr> &sink, rename_env &env, hir::expr_id eid) {
             const auto &node = fn.get(eid);
 
             return std::visit(overloaded{
-                                   [ & ](const hir::expr::int_lit &lit) -> argument {
-                                       value target = vn.fresh();
-                                       sink.push_back(instr{cons_data{.c = lit.value, .target = target}});
-                                       return target;
-                                   },
-                                   [ & ](const hir::expr::bool_lit &lit) -> argument {
-                                       value target = vn.fresh();
-                                       sink.push_back(instr{lin::cons_data{.c = lit.value, .target = target}});
-                                       return target;
-                                   },
-                                   [ & ](const hir::expr::str_lit &lit) -> argument {
-                                       value target = vn.fresh();
-                                       sink.push_back(instr{str_cons_data{.str = std::string(lit.value), .target = target}});
-                                       return target;
-                                   },
-                                   [ & ](const hir::expr::var &v) -> argument {
-                                       value fst = vn.fresh();
-                                       value snd = vn.fresh();
-                                       sink.push_back(
-                                           instr{dup_data{.arg1 = env.at(v.id), .first = fst, .second = snd}});
-                                       env.reassign(v.id, snd);
-                                       return fst;
-                                   },
-                                   [ & ](const hir::expr::unary &u) -> argument {
-                                       argument sub = lower_expr(sink, env, u.sub);
-                                       value target = vn.fresh();
-                                       sink.push_back(instr{unary_data{u.op, sub, target}});
-                                       return target;
-                                   },
-                                   [ & ](const hir::expr::binary &b) -> argument {
-                                       argument l = lower_expr(sink, env, b.left);
-                                       argument r = lower_expr(sink, env, b.right);
-                                       value target = vn.fresh();
-                                       sink.push_back(instr{binary_data{b.op, l, r, target}});
-                                       return target;
-                                   },
-                                   [ & ](const hir::expr::assign &a) -> argument {
-                                       argument val = lower_expr(sink, env, a.value);
-                                       auto target = env.at(a.target);
-                                       sink.push_back(instr{drop_data{.target = target}});
-                                       sink.push_back(instr{copy_data{.arg1 = val, .target = target}});
-                                       return target;
-                                   },
-                                   [ & ](const hir::expr::call &c) -> argument {
-                                       std::vector<argument> args;
+                                  [ & ](const hir::expr::int_lit &lit) -> argument {
+                                      value target = vn.fresh();
+                                      sink.push_back(instr{cons_data{.c = lit.value, .target = target}});
+                                      return target;
+                                  },
+                                  [ & ](const hir::expr::bool_lit &lit) -> argument {
+                                      value target = vn.fresh();
+                                      sink.push_back(instr{cons_data{.c = lit.value, .target = target}});
+                                      return target;
+                                  },
+                                  [ & ](const hir::expr::str_lit &lit) -> argument {
+                                      value target = vn.fresh();
+                                      sink.push_back(instr{
+                                          str_cons_data{.str = std::string(lit.value), .target = target}
+                                      });
+                                      return target;
+                                  },
+                                  [ & ](const hir::expr::var &v) -> argument {
+                                      value fst = vn.fresh();
+                                      value snd = vn.fresh();
+                                      sink.push_back(
+                                          instr{dup_data{.arg1 = env.at(v.id), .first = fst, .second = snd}});
+                                      env.reassign(v.id, snd);
+                                      return fst;
+                                  },
+                                  [ & ](const hir::expr::unary &u) -> argument {
+                                      argument sub = lower_expr(sink, env, u.sub);
+                                      value target = vn.fresh();
+                                      sink.push_back(instr{unary_data{u.op, sub, target}});
+                                      return target;
+                                  },
+                                  [ & ](const hir::expr::binary &b) -> argument {
+                                      if (b.op == AND || b.op == OR)
+                                          return lower_short_circuit(sink, env, b.op, b.left, b.right);
 
-                                       for (auto arg: c.args)
-                                           args.push_back(lower_expr(sink, env, arg));
+                                      argument l = lower_expr(sink, env, b.left);
+                                      argument r = lower_expr(sink, env, b.right);
+                                      value target = vn.fresh();
+                                      sink.push_back(instr{binary_data{b.op, l, r, target}});
+                                      return target;
+                                  },
+                                  [ & ](const hir::expr::assign &a) -> argument {
+                                      argument val = lower_expr(sink, env, a.value);
+                                      auto target = env.at(a.target);
+                                      sink.push_back(instr{drop_data{.target = target}});
+                                      sink.push_back(instr{copy_data{.arg1 = val, .target = target}});
 
-                                       value target = vn.fresh();
-                                       sink.push_back(instr{call_data{c.target, std::move(args), target}});
-                                       return target;
-                                   },
-                                   [ & ](const hir::expr::member &m) -> argument {
-                                       argument obj = lower_expr(sink, env, m.object);
-                                       argument key = lower_expr(sink, env, m.key);
-                                       value target = vn.fresh();
-                                       sink.push_back(instr{get_data{obj, key, target}});
-                                       return target;
-                                   },
-                                   [ & ](const hir::expr::object_lit &ol) -> argument {
-                                       value obj = vn.fresh();
-                                       sink.push_back(instr{cons_obj_data{obj}});
+                                      value fst = vn.fresh();
+                                      value snd = vn.fresh();
+                                      sink.push_back(instr{dup_data{.arg1 = target, .first = fst, .second = snd}});
+                                      env.reassign(a.target, snd);
+                                      return fst;
+                                  },
+                                  [ & ](const hir::expr::call &c) -> argument {
+                                      std::vector<argument> args;
 
-                                       for (auto &[key, val_id]: ol.props) {
-                                           value key_val = vn.fresh();
-                                           sink.push_back(instr{str_cons_data{std::string(key), key_val}});
+                                      for (auto arg: c.args)
+                                          args.push_back(lower_expr(sink, env, arg));
 
-                                           argument val = lower_expr(sink, env, val_id);
+                                      value target = vn.fresh();
+                                      sink.push_back(instr{call_data{c.target, std::move(args), target}});
+                                      return target;
+                                  },
+                                  [ & ](const hir::expr::member &m) -> argument {
+                                      argument obj = lower_expr(sink, env, m.object);
+                                      argument key = lower_expr(sink, env, m.key);
+                                      value target = vn.fresh();
+                                      sink.push_back(instr{get_data{obj, key, target}});
+                                      return target;
+                                  },
+                                  [ & ](const hir::expr::object_lit &ol) -> argument {
+                                      value obj = vn.fresh();
+                                      sink.push_back(instr{cons_obj_data{obj}});
 
-                                           value next_obj = vn.fresh();
-                                           sink.push_back(instr{set_data{obj, key_val, val, next_obj}});
-                                           obj = next_obj;
-                                       }
+                                      for (auto &[key, val_id]: ol.props) {
+                                          value key_val = vn.fresh();
+                                          sink.push_back(instr{str_cons_data{std::string(key), key_val}});
 
-                                       return obj;
-                                   },
-                                   [ & ](const hir::expr::array_lit &al) -> argument {
-                                       value arr = vn.fresh();
-                                       sink.push_back(instr{cons_arr_data{arr}});
+                                          argument val = lower_expr(sink, env, val_id);
 
-                                       for (size_t idx = 0; idx < al.elements.size(); ++idx) {
-                                           value key_val = vn.fresh();
-                                           sink.push_back(instr{cons_data{.c = static_cast<uint64_t>(idx), .target = key_val}});
+                                          value next_obj = vn.fresh();
+                                          sink.push_back(instr{set_data{obj, key_val, val, next_obj}});
+                                          obj = next_obj;
+                                      }
 
-                                           argument val = lower_expr(sink, env, al.elements[idx]);
+                                      return obj;
+                                  },
+                                  [ & ](const hir::expr::array_lit &al) -> argument {
+                                      value arr = vn.fresh();
+                                      sink.push_back(instr{cons_arr_data{arr}});
 
-                                           value next_arr = vn.fresh();
-                                           sink.push_back(instr{set_data{arr, key_val, val, next_arr}});
-                                           arr = next_arr;
-                                       }
+                                      for (size_t idx = 0; idx < al.elements.size(); ++idx) {
+                                          value key_val = vn.fresh();
+                                          sink.push_back(instr{
+                                              cons_data{.c = static_cast<uint64_t>(idx), .target = key_val}
+                                          });
 
-                                       return arr;
-                                   },
-                                   [ & ](const hir::expr::member_assign &ma) -> argument {
-                                       // Evaluate key and value *before* reading the object's current
-                                       // binding value: either could itself reference the same
-                                       // binding (`o[o.a] = o.b`), and each such read dup+reassigns
-                                       // it in env -- reading `object` last guarantees we consume
-                                       // whatever the *latest* live reference is, not a stale one
-                                       // that's already been split by an intervening dup.
-                                       argument key = lower_expr(sink, env, ma.key);
-                                       argument val = lower_expr(sink, env, ma.value);
+                                          argument val = lower_expr(sink, env, al.elements[idx]);
 
-                                       // set_data consumes its value operand, but a JS assignment
-                                       // expression evaluates to the right-hand value -- dup so one
-                                       // copy is stored and the other is this expression's result.
-                                       value val1 = vn.fresh();
-                                       value val2 = vn.fresh();
-                                       sink.push_back(instr{dup_data{.arg1 = val, .first = val1, .second = val2}});
+                                          value next_arr = vn.fresh();
+                                          sink.push_back(instr{set_data{arr, key_val, val, next_arr}});
+                                          arr = next_arr;
+                                      }
 
-                                       argument obj = env.at(ma.object);
+                                      return arr;
+                                  },
+                                  [ & ](const hir::expr::member_assign &ma) -> argument {
+                                      argument key = lower_expr(sink, env, ma.key);
+                                      argument val = lower_expr(sink, env, ma.value);
+                                      value val1 = vn.fresh();
+                                      value val2 = vn.fresh();
+                                      sink.push_back(instr{dup_data{.arg1 = val, .first = val1, .second = val2}});
 
-                                       value new_obj = vn.fresh();
-                                       sink.push_back(instr{set_data{obj, key, val1, new_obj}});
-                                       env.reassign(ma.object, new_obj);
+                                      argument obj = env.at(ma.object);
 
-                                       return val2;
-                                   },
-                               }, node.data);
+                                      value new_obj = vn.fresh();
+                                      sink.push_back(instr{set_data{obj, key, val1, new_obj}});
+                                      env.reassign(ma.object, new_obj);
+
+                                      return val2;
+                                  },
+                              }, node.data);
+        }
+
+        // a && b  ==  let tmp = a; if (truthy(tmp)) { tmp = b; }  tmp
+        // a || b  ==  let tmp = a; if (truthy(tmp)) { /* keep */ } else { tmp = b; }  tmp
+        argument lower_short_circuit(std::vector<instr> &sink, rename_env &env, op_kind op,
+                                     hir::expr_id left_id, hir::expr_id right_id) {
+            argument left_val = lower_expr(sink, env, left_id);
+
+            value cond_copy = vn.fresh();
+            value tmp_copy = vn.fresh();
+            sink.push_back(instr{dup_data{.arg1 = left_val, .first = cond_copy, .second = tmp_copy}});
+
+            sema::binding_id tmp_bid = fresh_binding();
+            env.declare(tmp_bid, tmp_copy);
+
+            std::vector<sema::binding_id> live_bindings{};
+            std::vector<value> params{};
+            for (auto &[bid, val]: env.scope) {
+                live_bindings.push_back(sema::binding_id{bid});
+                params.push_back(val);
+            }
+
+            auto assign_tmp_to_rhs = [ & ](std::vector<instr> &body, rename_env &branch_env) {
+                argument rhs_val = lower_expr(body, branch_env, right_id);
+                value target = branch_env.at(tmp_bid);
+                body.push_back(instr{drop_data{.target = target}});
+                body.push_back(instr{copy_data{.arg1 = rhs_val, .target = target}});
+                branch_env.reassign(tmp_bid, target);
+            };
+
+            std::vector<instr> then_body;
+            rename_env then_env = env;
+            std::vector<instr> else_body;
+            rename_env else_env = env;
+
+            if (op == AND)
+                assign_tmp_to_rhs(then_body, then_env);
+            else
+                assign_tmp_to_rhs(else_body, else_env);
+
+            std::vector<value> then_outputs{};
+            for (auto &bid: live_bindings)
+                then_outputs.push_back(then_env.at(bid));
+
+            std::vector<value> else_outputs{};
+            for (auto &bid: live_bindings)
+                else_outputs.push_back(else_env.at(bid));
+
+            std::vector<value> outputs{};
+            for (auto &bid: live_bindings) {
+                value out = vn.fresh();
+                outputs.push_back(out);
+                env.reassign(bid, out);
+            }
+
+            sink.push_back(instr{
+                if_data{
+                    .cond = cond_copy,
+                    .then_body = std::move(then_body),
+                    .else_body = std::move(else_body),
+                    .params = std::move(params),
+                    .then_outputs = std::move(then_outputs),
+                    .else_outputs = std::move(else_outputs),
+                    .outputs = std::move(outputs),
+                }
+            });
+
+            value result = env.at(tmp_bid);
+            env.forget(tmp_bid);
+            return result;
         }
 
         //  This doesn't work for the stacks that we return from the procedure
@@ -229,14 +306,16 @@ namespace qthu::js2ct::lin {
                                std::vector<instr> then_body;
                                rename_env then_env = env;
                                lower_stmt(then_body, then_env, ifd.then_branch);
-                               bool then_returns = !then_body.empty() && std::holds_alternative<ret_data>(then_body.back().data);
+                               bool then_returns = !then_body.empty() && std::holds_alternative<ret_data>(
+                                                       then_body.back().data);
 
                                std::vector<instr> else_body;
                                rename_env else_env = env;
                                bool else_returns = false;
                                if (ifd.else_branch) {
                                    lower_stmt(else_body, else_env, ifd.else_branch.value());
-                                   else_returns = !else_body.empty() && std::holds_alternative<ret_data>(else_body.back().data);
+                                   else_returns = !else_body.empty() && std::holds_alternative<ret_data>(
+                                                      else_body.back().data);
                                }
 
                                // Both branches definitely return: nothing after the if in
