@@ -300,6 +300,19 @@ struct analyzer
         }
         else if ( auto* fd = std::get_if< ast::fn_declaration >( &s.data ) )
         {
+            // "main" is reserved: the top-level script itself always
+            // compiles to `structure main` (linear2cthu.hpp's lowerer,
+            // matching cthuc's hardcoded find_main_id() lookup for
+            // `structure main :: run`) -- a JS function also named `main`
+            // would collide with it (two `structure main` blocks in the
+            // emitted .ct, which cthuc's reader rejects as "main already
+            // defined", a confusing error that doesn't point at the real
+            // cause). Reject it here instead, with a clear explanation.
+            if ( fd->name == "main" )
+                error( s.loc, "'main' is a reserved function name -- the top-level script itself "
+                               "compiles to the structure named 'main', so a function can't be named "
+                               "that too. Please rename this function." );
+
             scope_id fn_scope = declare_scope( scope::kind::function, curr_scope );
             function_id fid{ .value = static_cast< uint32_t >( result.functions.size() ) };
             result.stmt_scopes[ &s ] = fn_scope;
