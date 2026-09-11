@@ -33,8 +33,8 @@ target_link_libraries(bcrun
 )
 
 # compiler from cthu to qjs bytecode
-add_executable(cthuc)
-target_sources(cthuc
+add_executable(ct2qjs)
+target_sources(ct2qjs
     PRIVATE
         src/ct2qjs/main.cpp
         src/ct2qjs/lexer.cpp
@@ -45,12 +45,12 @@ target_sources(cthuc
     src/asm/directive.cpp
 )
 
-target_include_directories(cthuc
+target_include_directories(ct2qjs
     PRIVATE
     ${CMAKE_SOURCE_DIR}/bricks
 )
 
-target_link_libraries(cthuc
+target_link_libraries(ct2qjs
     PRIVATE
     quickjs-libc
 )

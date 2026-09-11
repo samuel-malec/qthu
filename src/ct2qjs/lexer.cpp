@@ -2,91 +2,86 @@
 
 #include "lexer.hpp"
 
-namespace qthu::ct2qjs
-{
-    bool lexer::compatible( cat c, char32_t ch )
-    {
-        if ( c == cat::comment )
+namespace qthu::ct2qjs {
+    bool lexer::compatible(cat c, char32_t ch) {
+        if (c == cat::comment)
             return ch != '\n';
-        if ( c == cat::ident )
-            return ch <= 255    && std::isalnum( ch ) ||
-                   ch >= 0x2070 && ch < 0x20a0        ||
-                   ch >= 0x00b0 && ch < 0x00c0        ||
-                   ch >= 0x1d62 && ch < 0x1d66        ||
-                   ch == U'?'   || ch == U'_'         ||
-                   ch == U'\''  || ch == U'%';
+        if (c == cat::ident)
+            return ch <= 255 && std::isalnum(ch) ||
+                   ch >= 0x2070 && ch < 0x20a0 ||
+                   ch >= 0x00b0 && ch < 0x00c0 ||
+                   ch >= 0x1d62 && ch < 0x1d66 ||
+                   ch == U'?' || ch == U'_' ||
+                   ch == U'\'' || ch == U'%';
         return false;
     }
 
-    void lexer::next()
-    {
-        if ( compatible( cnow, peek() ) )
+    void lexer::next() {
+        if (compatible(cnow, peek()))
             return shift();
-        else
-        {
-            if ( cnow == cat::ident )
-            {
-                if ( token_data() == "type" )
+        else {
+            if (cnow == cat::ident) {
+                if (token_data() == "type")
                     cnow = cat::kw_type;
-                if ( token_data() == "structure" )
+                if (token_data() == "structure")
                     cnow = cat::kw_struct;
-                if ( token_data() == "signature" )
+                if (token_data() == "signature")
                     cnow = cat::kw_sig;
             }
 
-            if ( cnow != cat::invalid )
+            if (cnow != cat::invalid)
                 return push();
         }
 
-        if ( peek_any( U"\t\r " ) )
+        if (peek_any(U"\t\r "))
             return shift(), drop();
 
-        if ( auto c = peek(); c <= 255 && ( std::isalpha( c ) || c == '%' ) )
-            return start( cat::ident );
+        if (auto c = peek(); c <= 255 && (std::isalpha(c) || c == '%'))
+            return start(cat::ident);
 
-        if ( peek() == '"' )
-        {
+        if (peek() == '"') {
             shift();
             drop();
 
-            while ( !empty() && peek() != '"' )
+            while (!empty() && peek() != '"')
                 shift();
 
-            if ( empty() )
-                throw std::runtime_error( std::format( "Unterminated string literal at line: {}, in column: {}", loc.line, loc.col ) );
+            if (empty())
+                throw std::runtime_error(std::format("Unterminated string literal at line: {}, in column: {}", loc.line,
+                                                     loc.col));
 
-            push( cat::str );
+            push(cat::str);
 
             shift();
             drop();
             return;
         }
 
-        if ( accept_any( U"[]", cat::bracket ) )
+        if (accept_any(U"[]", cat::bracket))
             return;
 
-        if ( accept_any( U"()", cat::paren ) )
+        if (accept_any(U"()", cat::paren))
             return;
 
-        if ( accept( U"\n", cat::eol ) )
+        if (accept(U"\n", cat::eol))
             return;
 
-        if ( accept( U":", cat::punct ) ||
-             accept( U"∷", cat::punct ) ||
-             accept( U"×", cat::punct ) ||
-             accept( U"=", cat::punct ) ||
-             accept( U",", cat::punct ) )
+        if (accept(U":", cat::punct) ||
+            accept(U"∷", cat::punct) ||
+            accept(U"×", cat::punct) ||
+            accept(U"=", cat::punct) ||
+            accept(U",", cat::punct))
             return;
 
-        if ( start( U";", cat::comment ) )
+        if (start(U";", cat::comment))
             return;
 
-        if ( accept( U"λ", cat::lambda ) ||
-             accept( U"∅", cat::ident ) ||
-             accept( U"→", cat::arrow ) ||
-             accept( U"->", cat::arrow ) )
+        if (accept(U"λ", cat::lambda) ||
+            accept(U"∅", cat::ident) ||
+            accept(U"→", cat::arrow) ||
+            accept(U"->", cat::arrow))
             return;
- 
-        throw std::runtime_error( std::format( "Invalid .ct format at line: {}, in column: {}", loc.line, loc.col ) );
+
+        throw std::runtime_error(std::format("Invalid .ct format at line: {}, in column: {}", loc.line, loc.col));
     }
 }

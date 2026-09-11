@@ -1,23 +1,18 @@
 #include "reader.hpp"
 
-namespace qthu::ct2qjs
-{
-    diag reader::error( token t, auto... msg )
-    {
-        auto rv = brq::make_refcount< diag_msg >( t.loc, msg... );
-        rv->text << ": " << brq::printable( t.data );
+namespace qthu::ct2qjs {
+    diag reader::error(token t, auto... msg) {
+        auto rv = brq::make_refcount<diag_msg>(t.loc, msg...);
+        rv->text << ": " << brq::printable(t.data);
         return rv;
     }
 
-    diag reader::parse()
-    {
-        while ( !lex.empty() )
-        {
+    diag reader::parse() {
+        while (!lex.empty()) {
             token t = fetch();
             diag err;
 
-            switch ( t.cat )
-            {
+            switch (t.cat) {
                 case token::eol:
                     break;
                 case token::kw_type:
@@ -30,88 +25,79 @@ namespace qthu::ct2qjs
                     err = read_structure();
                     break;
                 default:
-                    err = error( t, "unexpected token at toplevel" );
+                    err = error(t, "unexpected token at toplevel");
                     break;
             }
 
-            if ( err )
+            if (err)
                 return err;
         }
 
         return nullptr;
     }
 
-    token reader::peek()
-    {
-        while ( current.cat == token::invalid )
-        {
-            while ( !lex.empty() && current.cat == token::invalid )
+    token reader::peek() {
+        while (current.cat == token::invalid) {
+            while (!lex.empty() && current.cat == token::invalid)
                 lex.next();
 
-            if ( current.cat == token::comment )
+            if (current.cat == token::comment)
                 current = {};
         }
 
         return current;
     }
 
-    token reader::fetch()
-    {
+    token reader::fetch() {
         auto rv = peek();
         current = {};
         return rv;
     }
 
-    diag reader::skip( token::cat_t cat )
-    {
-        while ( peek( cat ) )
+    diag reader::skip(token::cat_t cat) {
+        while (peek(cat))
             fetch();
         return nullptr;
     }
 
-    diag reader::require( token::cat_t cat, std::string_view data )
-    {
+    diag reader::require(token::cat_t cat, std::string_view data) {
         auto tok = fetch();
 
-        if ( tok.cat != cat || ( !data.empty() && tok.data != data ) )
-            return error( tok, "expected ", cat, " ", brq::printable( data ) );
+        if (tok.cat != cat || (!data.empty() && tok.data != data))
+            return error(tok, "expected ", cat, " ", brq::printable(data));
 
-        if ( cat == token::eol )
-            skip( token::eol );
+        if (cat == token::eol)
+            skip(token::eol);
 
         return nullptr;
     }
 
-    bool reader::peek( token::cat_t cat, std::string_view data )
-    {
+    bool reader::peek(token::cat_t cat, std::string_view data) {
         auto t = peek();
-        return t.cat == cat && ( data.empty() || t.data == data );
+        return t.cat == cat && (data.empty() || t.data == data);
     }
 
-    diag reader::read_name( auto *&out, auto &map )
-    {
+    diag reader::read_name(auto *&out, auto &map) {
         auto name = fetch();
-        if ( name.cat != token::ident )
-            return error( name, "expected an identifier" );
+        if (name.cat != token::ident)
+            return error(name, "expected an identifier");
 
-        auto key = prog.get( name.data );
-        if ( map.contains( key ) )
-            return error( name, name.data, " already defined" );
+        auto key = prog.get(name.data);
+        if (map.contains(key))
+            return error(name, name.data, " already defined");
 
-        out = &map[ key ];
+        out = &map[key];
         return nullptr;
     }
 
-    diag reader::read_ident_list( auto &out, auto f, std::string_view delim )
-    {
-        while ( peek( token::ident ) )
-        {
-            out.push_back( f( fetch() ) );
+    diag reader::read_ident_list(auto &out, auto f, std::string_view delim) {
+        while (peek(token::ident)) {
+            out.push_back(f(fetch()));
 
-            if ( delim.empty() )
+            if (delim.empty())
                 continue;
 
-            if ( peek( token::punct, delim ) )
+            if (peek(token::punct, delim))
                 fetch();
             else
                 break;
@@ -120,51 +106,47 @@ namespace qthu::ct2qjs
         return nullptr;
     }
 
-    diag reader::read_type()
-    {
+    diag reader::read_type() {
         auto name = fetch();
         auto eol = fetch();
 
-        if ( name.cat != token::ident )
-            return error( name, "expected an identifier" );
+        if (name.cat != token::ident)
+            return error(name, "expected an identifier");
 
-        if ( eol.cat != token::eol )
-            return error( eol, "expected an end of line" );
+        if (eol.cat != token::eol)
+            return error(eol, "expected an end of line");
 
-        if ( prog.has_type( name.data ) )
-            return error( name, "type already defined" );
+        if (prog.has_type(name.data))
+            return error(name, "type already defined");
 
-        prog.get_type( name.data );
+        prog.get_type(name.data);
         return nullptr;
     }
 
-    diag reader::read_sig_args( signature_t &out )
-    {
+    diag reader::read_sig_args(signature_t &out) {
         diag err;
 
-        ( err = require( token::bracket, "[" ) ) ||
-        ( err = read_ident_list( out.args, get_atom(), "," ) ) ||
-        ( err = require( token::bracket, "]" ) );
+        (err = require(token::bracket, "[")) ||
+                (err = read_ident_list(out.args, get_atom(), ",")) ||
+                (err = require(token::bracket, "]"));
 
         return err;
     }
 
-    diag reader::read_sig_inherit( signature_t &out )
-    {
-        diag err = require( token::punct, ":" );
-        while ( !err && peek( token::ident ) )
-        {
-            auto key = get_atom()( fetch() );
-            std::vector< atom > args;
+    diag reader::read_sig_inherit(signature_t &out) {
+        diag err = require(token::punct, ":");
+        while (!err && peek(token::ident)) {
+            auto key = get_atom()(fetch());
+            std::vector<atom> args;
 
-            ( err = require( token::bracket, "[" ) ) ||
-            ( err = read_ident_list( args, get_atom(), "," ) ) ||
-            ( err = require( token::bracket, "]" ) );
+            (err = require(token::bracket, "[")) ||
+                    (err = read_ident_list(args, get_atom(), ",")) ||
+                    (err = require(token::bracket, "]"));
 
-            if ( !err )
-                out.inherits.emplace_back( key, std::move( args ) );
+            if (!err)
+                out.inherits.emplace_back(key, std::move(args));
 
-            if ( !err && peek( token::punct, "," ) )
+            if (!err && peek(token::punct, ","))
                 fetch();
             else
                 break;
@@ -173,168 +155,154 @@ namespace qthu::ct2qjs
         return err;
     }
 
-    diag reader::read_sig_type( sig_def_t &def )
-    {
+    diag reader::read_sig_type(sig_def_t &def) {
         diag err;
 
-        ( err = read_ident_list( def.in, get_atom(), "×" ) ) ||
-        ( err = require( token::arrow ) ) ||
-        ( err = read_ident_list( def.out, get_atom(), "×" ) );
+        (err = read_ident_list(def.in, get_atom(), "×")) ||
+                (err = require(token::arrow)) ||
+                (err = read_ident_list(def.out, get_atom(), "×"));
 
         return err;
     }
 
-    diag reader::read_sig_def( signature_t &out )
-    {
+    diag reader::read_sig_def(signature_t &out) {
         diag err;
         sig_def_t *def;
 
-        ( err = read_name( def, out.defs ) ) ||
-        ( err = require( token::punct, "∷" ) ) ||
-        ( err = read_sig_type( *def ) );
+        (err = read_name(def, out.defs)) ||
+                (err = require(token::punct, "∷")) ||
+                (err = read_sig_type(*def));
 
         return err;
     }
 
-    diag reader::read_sig_defs( signature_t &out )
-    {
-        while ( !peek( token::paren, ")" ) )
-        {
-            while ( peek( token::eol ) )
+    diag reader::read_sig_defs(signature_t &out) {
+        while (!peek(token::paren, ")")) {
+            while (peek(token::eol))
                 fetch();
 
-            if ( peek( token::paren, ")" ) )
+            if (peek(token::paren, ")"))
                 break;
 
-            if ( auto err = read_sig_def( out ) )
+            if (auto err = read_sig_def(out))
                 return err;
 
-            if ( auto err = require( token::eol ) )
+            if (auto err = require(token::eol))
                 return err;
         }
 
         return nullptr;
     }
 
-    diag reader::read_signature()
-    {
+    diag reader::read_signature() {
         signature_t *out;
         diag err;
 
-        ( err = read_name( out, prog.signatures ) ) ||
-        ( err = read_sig_args( *out ) ) ||
-        ( peek( token::punct, ":" ) && ( err = read_sig_inherit( *out ) ) ) ||
-        ( err = require( token::eol ) ) ||
-        ( err = require( token::paren, "(" ) ) ||
-        ( err = skip( token::eol ) ) ||
-        ( err = read_sig_defs( *out ) ) ||
-        ( err = require( token::paren, ")" ) );
+        (err = read_name(out, prog.signatures)) ||
+                (err = read_sig_args(*out)) ||
+                (peek(token::punct, ":") && (err = read_sig_inherit(*out))) ||
+                (err = require(token::eol)) ||
+                (err = require(token::paren, "(")) ||
+                (err = skip(token::eol)) ||
+                (err = read_sig_defs(*out)) ||
+                (err = require(token::paren, ")"));
 
         return err;
     }
 
-    diag reader::read_function( function_t &fn )
-    {
-        std::vector< atom > in;
-        std::vector< atom > out;
+    diag reader::read_function(function_t &fn) {
+        std::vector<atom> in;
+        std::vector<atom> out;
 
-        if ( auto err = read_ident_list( in, get_atom(), "" ) )
+        if (auto err = read_ident_list(in, get_atom(), ""))
             return err;
 
-        if ( peek( token::arrow ) )
-        {
+        if (peek(token::arrow)) {
             fetch();
-            if ( auto err = read_ident_list( out, get_atom(), "" ) )
+            if (auto err = read_ident_list(out, get_atom(), ""))
                 return err;
         }
 
-        for ( auto a : in )
-            fn.in.push_back( a );
+        for (auto a: in)
+            fn.in.push_back(a);
 
-        for ( auto a : out )
-            fn.out.push_back( a );
+        for (auto a: out)
+            fn.out.push_back(a);
 
-        skip( token::eol );
+        skip(token::eol);
 
-        if ( auto err = require( token::paren, "(" ) )
+        if (auto err = require(token::paren, "("))
             return err;
 
-        while ( true )
-        {
-            while ( peek( token::eol ) )
+        while (true) {
+            while (peek(token::eol))
                 fetch();
 
-            if ( peek( token::paren, ")" ) )
-            {
+            if (peek(token::paren, ")")) {
                 fetch();
                 break;
             }
 
             auto s = fetch();
             auto o = fetch();
-            if ( s.cat != token::ident || o.cat != token::ident )
-                return error( s, "expected instruction as: structure operation in... → out..." );
+            if (s.cat != token::ident || o.cat != token::ident)
+                return error(s, "expected instruction as: structure operation in... → out...");
 
             insn_t insn;
-            insn.structure = prog.get( s.data );
-            insn.operation = prog.get( o.data );
+            insn.structure = prog.get(s.data);
+            insn.operation = prog.get(o.data);
 
-            if ( peek( token::str ) )
-                insn.literal = std::string( fetch().data );
-            else if ( auto err = read_ident_list( insn.in, get_atom(), "" ) )
+            if (peek(token::str))
+                insn.literal = std::string(fetch().data);
+            else if (auto err = read_ident_list(insn.in, get_atom(), ""))
                 return err;
 
-            if ( peek( token::arrow ) )
-            {
+            if (peek(token::arrow)) {
                 fetch();
-                if ( auto err = read_ident_list( insn.out, get_atom(), "" ) )
+                if (auto err = read_ident_list(insn.out, get_atom(), ""))
                     return err;
 
-                if ( insn.out.empty() )
-                    return error( o, "operation must have at least one output parameter after →" );
-            }
+                if (insn.out.empty())
+                    return error(o, "operation must have at least one output parameter after →");
+            } else if (insn.in.empty() && !insn.literal)
+                return error(o, "operation must have at least one input or output parameter");
 
-            else if ( insn.in.empty() && !insn.literal )
-                return error( o, "operation must have at least one input or output parameter" );
-
-            if ( auto err = require( token::eol ) )
+            if (auto err = require(token::eol))
                 return err;
 
-            fn.body.push_back( std::move( insn ) );
+            fn.body.push_back(std::move(insn));
         }
 
         return nullptr;
     }
 
-    diag reader::read_struct_sigs( structure_t &out )
-    {
-        if ( auto err = require( token::punct, ":" ) )
+    diag reader::read_struct_sigs(structure_t &out) {
+        if (auto err = require(token::punct, ":"))
             return err;
 
-        while ( true )
-        {
+        while (true) {
             auto sig = fetch();
-            if ( sig.cat != token::ident )
-                return error( sig, "expected signature name" );
+            if (sig.cat != token::ident)
+                return error(sig, "expected signature name");
 
-            if ( !prog.has_signature( sig.data ) )
-                return error( sig, "unknown signature" );
+            if (!prog.has_signature(sig.data))
+                return error(sig, "unknown signature");
 
             sig_instance_t inst;
-            inst.signature = prog.get( sig.data );
+            inst.signature = prog.get(sig.data);
 
-            if ( auto err = require( token::bracket, "[" ) )
+            if (auto err = require(token::bracket, "["))
                 return err;
 
-            if ( auto err = read_ident_list( inst.args, get_atom(), "," ) )
+            if (auto err = read_ident_list(inst.args, get_atom(), ","))
                 return err;
 
-            if ( auto err = require( token::bracket, "]" ) )
+            if (auto err = require(token::bracket, "]"))
                 return err;
 
-            out.signatures.push_back( std::move( inst ) );
+            out.signatures.push_back(std::move(inst));
 
-            if ( peek( token::punct, "," ) )
+            if (peek(token::punct, ","))
                 fetch();
             else
                 break;
@@ -343,43 +311,38 @@ namespace qthu::ct2qjs
         return nullptr;
     }
 
-    diag reader::read_struct_defs( structure_t &out )
-    {
+    diag reader::read_struct_defs(structure_t &out) {
         diag err;
 
-        while ( !peek( token::paren, ")" ) )
-        {
-            while ( peek( token::eol ) )
+        while (!peek(token::paren, ")")) {
+            while (peek(token::eol))
                 fetch();
 
-            if ( peek( token::paren, ")" ) )
+            if (peek(token::paren, ")"))
                 break;
 
             auto op = fetch();
-            if ( op.cat != token::ident )
-                return error( op, "expected function name" );
+            if (op.cat != token::ident)
+                return error(op, "expected function name");
 
-            if ( err = require( token::punct, "=" ) )
+            if (err = require(token::punct, "="))
                 return err;
 
-            atom op_atom = prog.get( op.data );
+            atom op_atom = prog.get(op.data);
 
-            if ( peek( token::lambda ) )
-            {
+            if (peek(token::lambda)) {
                 fetch();
                 function_t fn;
-                if ( err = read_function( fn ) )
+                if (err = read_function(fn))
                     return err;
-                out.functions[ op_atom ] = std::move( fn );
-            }
-            else
-            {
+                out.functions[op_atom] = std::move(fn);
+            } else {
                 auto target = fetch();
-                if ( target.cat != token::ident )
-                    return error( target, "expected builtin operation or lambda" );
-                
-                out.builtin_ops[ op_atom ] = prog.get( target.data );
-                if ( err = require( token::eol ) )
+                if (target.cat != token::ident)
+                    return error(target, "expected builtin operation or lambda");
+
+                out.builtin_ops[op_atom] = prog.get(target.data);
+                if (err = require(token::eol))
                     return err;
             }
         }
@@ -387,19 +350,17 @@ namespace qthu::ct2qjs
         return nullptr;
     }
 
-    diag reader::read_structure()
-    {
+    diag reader::read_structure() {
         structure_t *out;
         diag err;
 
-        ( err = read_name( out, prog.structures ) ) ||
-        ( peek( token::punct, ":" ) && ( err = read_struct_sigs( *out ) ) ) ||
-        ( err = require( token::eol ) ) ||
-        ( err = require( token::paren, "(" ) ) ||
-        ( err = read_struct_defs( *out ) ) ||
-        ( err = require( token::paren, ")" ) );
+        (err = read_name(out, prog.structures)) ||
+                (peek(token::punct, ":") && (err = read_struct_sigs(*out))) ||
+                (err = require(token::eol)) ||
+                (err = require(token::paren, "(")) ||
+                (err = read_struct_defs(*out)) ||
+                (err = require(token::paren, ")"));
 
         return err;
     }
-
 }

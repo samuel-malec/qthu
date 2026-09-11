@@ -3,41 +3,36 @@
 #include <string>
 #include <cstring>
 
-#include "../common/file.hpp"
 #include "../common/document_store.hpp"
 #include "asm.hpp"
 #include "../bytecode/program.hpp"
 
-int main( int argc, const char** argv )
-{
+int main(int argc, const char **argv) {
     --argc, ++argv;
 
     using namespace qthu;
     document_store docstore;
     as::assembly assm;
 
-    const document* current_doc = nullptr;
-    const char* out_name = "qthu.qbc";
+    const document *current_doc = nullptr;
+    const char *out_name = "qthu.qbc";
 
-    try
-    {
-        if ( argc == 0 )
+    try {
+        if (argc == 0)
             current_doc = &docstore.load_from_stdin();
 
-        while ( current_doc || argc > 0 )
-        {
-            if ( argc > 1 && strcmp( *argv, "-o" ) == 0 )
-            {
-                out_name = argv[ 1 ];
+        while (current_doc || argc > 0) {
+            if (argc > 1 && strcmp(*argv, "-o") == 0) {
+                out_name = argv[1];
                 argc -= 2;
                 argv += 2;
                 continue;
             }
 
-            if ( !current_doc )
-                current_doc = &docstore.load_from_file( *argv++ ), --argc;
+            if (!current_doc)
+                current_doc = &docstore.load_from_file(*argv++), --argc;
 
-            assm.add_document( *current_doc );
+            assm.add_document(*current_doc);
             current_doc = nullptr;
         }
 
@@ -50,11 +45,9 @@ int main( int argc, const char** argv )
         std::cout << "Bytecode:\n";
         std::cout << prog.hex_dump() << "\n";
 
-        prog.write_binary( out_name );
+        prog.write_binary(out_name);
         std::cout << "Written to: " << out_name << "\n";
-    }
-    catch ( const std::exception& e )
-    {
+    } catch (const std::exception &e) {
         std::cout << "Error: " << e.what() << '\n';
         return 1;
     }

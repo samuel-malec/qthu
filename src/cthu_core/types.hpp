@@ -6,76 +6,68 @@
 #include <string>
 #include <vector>
 
-namespace qthu::ct2qjs
-{
+namespace qthu::ct2qjs {
+    struct atom {
+        uint32_t index = 0;
 
-struct atom
-{
-    uint32_t index = 0;
+        std::strong_ordering operator<=>(const atom &o) const = default;
 
-    std::strong_ordering operator<=>( const atom& o ) const = default;
-    bool operator==( const atom& o ) const = default;
-};
+        bool operator==(const atom &o) const = default;
+    };
 
-struct type_t {};
-using type_ptr = type_t *;
+    struct type_t {
+    };
 
-struct inout_t
-{
-    enum { in, out } direction;
-    type_ptr type;
-};
+    using type_ptr = type_t *;
 
-struct sig_def_t
-{
-    std::vector< atom > in, out;
-};
+    struct inout_t {
+        enum { in, out } direction;
 
-struct signature_t
-{
-    std::vector< atom > args;
-    std::vector< std::pair< atom, std::vector< atom > > > inherits;
-    std::map < atom, sig_def_t > defs;
-};
+        type_ptr type;
+    };
 
-using signature_ptr = signature_t*;
+    struct sig_def_t {
+        std::vector<atom> in, out;
+    };
 
-struct insn_t
-{
-    atom structure;
-    atom operation;
-    std::vector< atom > in;
-    std::vector< atom > out;
-    std::optional< std::string > literal; // an inline string-literal operand, e.g. `cons_str "length" -> key`
-};
+    struct signature_t {
+        std::vector<atom> args;
+        std::vector<std::pair<atom, std::vector<atom> > > inherits;
+        std::map<atom, sig_def_t> defs;
+    };
 
-struct function_t
-{
-    std::vector< atom > in;
-    std::vector< atom > out;
-    std::vector< insn_t > body;
-};
+    using signature_ptr = signature_t *;
 
-using function_ptr = function_t *;
+    struct insn_t {
+        atom structure;
+        atom operation;
+        std::vector<atom> in;
+        std::vector<atom> out;
+        std::optional<std::string> literal;
+    };
 
-struct sig_instance_t
-{
-    atom signature;
-    std::vector< atom > args;
-};
+    struct function_t {
+        std::vector<atom> in;
+        std::vector<atom> out;
+        std::vector<insn_t> body;
+    };
 
-struct structure_t
-{
-    std::vector< sig_instance_t > signatures;
-    std::map< atom, atom > builtin_ops;
-    std::map< atom, function_t > functions;
-};
+    using function_ptr = function_t *;
 
-using structure_ptr = structure_t *;
+    struct sig_instance_t {
+        atom signature;
+        std::vector<atom> args;
+    };
 
-struct module_t
-{
-    std::vector< structure_t > structures;
-};
+    struct structure_t {
+        std::vector<sig_instance_t> signatures;
+        std::map<atom, atom> builtin_ops;
+        std::map<atom, function_t> functions;
+    };
 
+    using structure_ptr = structure_t *;
+
+    struct module_t {
+        std::vector<structure_t> structures;
+    };
 }

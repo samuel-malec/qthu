@@ -6,123 +6,119 @@
 #include <vector>
 #include <stdexcept>
 
-namespace qthu::as
-{
+namespace qthu::as {
+    using symtab_t = std::map<std::string, uint32_t>;
 
-using symtab_t = std::map< std::string, uint32_t >;
+    struct opr {
+        uint32_t raw = 0;
 
-struct opr
-{
-    uint32_t raw = 0;
+        opr() = default;
 
-    opr() = default;
-    opr( uint32_t r ) : raw( r ) { };
+        opr(uint32_t r) : raw(r) {
+        };
 
-    std::string to_string() const
-    {
-        return std::to_string( raw );
-    }
+        std::string to_string() const {
+            return std::to_string(raw);
+        }
 
-    uint32_t as_unsigned() const
-    {
-        return raw;
-    }
+        uint32_t as_unsigned() const {
+            return raw;
+        }
 
-    int32_t as_signed() const
-    {
-        return raw;
-    }
-};
+        int32_t as_signed() const {
+            return raw;
+        }
+    };
 
-struct addr
-{
-    std::string sym;
-    int32_t off = 0;
+    struct addr {
+        std::string sym;
+        int32_t off = 0;
 
-    addr() = default;
-    addr( int a ) : off( a ) { };
-    addr( const char* s ) : sym( s ) { };
-    addr( std::string_view s ) : sym( s ) { };
-    addr( std::string s ) : sym( s ) { };
+        addr() = default;
 
-    addr( std::string_view s, int32_t o ) : sym( s ), off( o ) { }
+        addr(int a) : off(a) {
+        };
 
-    bool resolved() const
-    {
-        return sym.empty();
-    }
+        addr(const char *s) : sym(s) {
+        };
 
-    bool resolve( const symtab_t& symtab )
-    {
-        if ( resolved() )
+        addr(std::string_view s) : sym(s) {
+        };
+
+        addr(std::string s) : sym(s) {
+        };
+
+        addr(std::string_view s, int32_t o) : sym(s), off(o) {
+        }
+
+        bool resolved() const {
+            return sym.empty();
+        }
+
+        bool resolve(const symtab_t &symtab) {
+            if (resolved())
+                return true;
+
+            auto it = symtab.find(sym);
+            if (it == symtab.end())
+                return false;
+
+            off += it->second;
+            sym.clear();
             return true;
+        }
 
-        auto it = symtab.find( sym );
-        if ( it == symtab.end() )
-            return false;
+        int32_t value() const {
+            return off;
+        }
+    };
 
-        off += it->second;
-        sym.clear();
-        return true;
-    }
+    struct instruction {
+        std::string mnemonic;
+        uint8_t opcode;
+        uint8_t size;
+        opr operand;
+        addr address;
+        bool has_address = false;
 
-    int32_t value() const
-    {
-        return off;
-    }
-};
+        static instruction from_string(const std::string_view);
 
-struct instruction
-{
-    std::string mnemonic;
-    uint8_t opcode;
-    uint8_t size;
-    opr operand;
-    addr address;
-    bool has_address = false;
+        bool resolve(const symtab_t &symtab, uint32_t current_pc) {
+            if (!has_address)
+                return true;
 
-    static instruction from_string( const std::string_view );
+            if (address.resolved())
+                return true;
 
-    bool resolve( const symtab_t& symtab, uint32_t current_pc )
-    {
-        if ( !has_address )
+            auto it = symtab.find(address.sym);
+            if (it == symtab.end())
+                return false;
+
+            int32_t target = it->second;
+            address.off = target - (current_pc + 1);
+            address.sym.clear();
+
             return true;
+        }
 
-        if ( address.resolved() )
-            return true;
+        template<typename T>
+        inline void encode_int_le(std::vector<uint8_t> &buf, T value, uint8_t width) {
+            auto u = static_cast<std::make_unsigned_t<T>>(value);
+            for (int i = 0; i < width; i++)
+                buf.push_back(static_cast<uint8_t>((u >> (i * 8)) & 0xFF));
+        }
 
-        auto it = symtab.find( address.sym );
-        if ( it == symtab.end() )
-            return false;
+        std::vector<uint8_t> to_bytes() const {
+            std::vector<uint8_t> bytes;
+            bytes.push_back(opcode);
+            if (has_address && !address.resolved())
+                throw std::runtime_error("Unresolved label operand during bytecode encoding");
 
-        int32_t target = it->second;
-        address.off = target - ( current_pc + 1 );
-        address.sym.clear();
+            uint32_t value = has_address ? static_cast<uint32_t>(address.value()) : operand.raw;
+            for (int i = 0; i < size - 1; i++)
+                bytes.push_back(static_cast<uint8_t>((value >> (i * 8)) & 0xFF));
 
-        return true;
-    }
-
-    template< typename T >
-    inline void encode_int_le( std::vector< uint8_t >& buf, T value, uint8_t width )
-    {
-        auto u = static_cast< std::make_unsigned_t< T > >( value );
-        for ( int i = 0; i < width; i++ )
-            buf.push_back( static_cast< uint8_t >( ( u >> ( i * 8 ) ) & 0xFF ) );
-    }
-
-    std::vector< uint8_t > to_bytes() const
-    {
-        std::vector< uint8_t > bytes;
-        bytes.push_back( opcode );
-        if ( has_address && !address.resolved() )
-            throw std::runtime_error( "Unresolved label operand during bytecode encoding" );
-
-        uint32_t value = has_address ? static_cast< uint32_t >( address.value() ) : operand.raw;
-        for ( int i = 0; i < size - 1; i++ )
-            bytes.push_back( static_cast< uint8_t >( ( value >> ( i * 8 ) ) & 0xFF ) );
-
-        return bytes;
-    }
-};
-
+            return bytes;
+        }
+    };
 }
