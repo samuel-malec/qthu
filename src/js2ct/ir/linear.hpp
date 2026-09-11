@@ -88,12 +88,39 @@ namespace qthu::js2ct::lin {
         value second;
     };
 
+    // A call can only ever propagate one output (same constraint loop_data
+    // works around -- see pack_values/unpack_values in linear2cthu.hpp), so
+    // each branch's live bindings travel packed: then_outputs/else_outputs
+    // are what then_body/else_body leave each live binding holding (same
+    // order as params; else_outputs == params unchanged when there's no
+    // explicit else branch), and outputs are fresh ids for the merged
+    // post-if value of each binding -- the enclosing scope gets reassigned
+    // to these, same order as params, so code after the if sees the right
+    // values regardless of which branch ran.
+    //
+    // Exception: exhaustively_returns (both branches' lowered bodies end in
+    // a real `return`) means nothing after the if in this block can ever
+    // execute -- there's nothing to thread forward, so then_outputs/
+    // else_outputs/outputs are left empty and unused. codegen keeps the
+    // simple single-"out" shape in that case (each branch's own trailing
+    // return already produces "out" locally; the dispatch's own result
+    // becomes the enclosing function's return value one level up, tail-
+    // position style) -- packing it anyway would silently break that,
+    // since the enclosing function would stop looking like it produces
+    // "out" at all. Detected as a direct check (does the lowered body's
+    // last instruction happen to be a return), not a general "does this
+    // statement always terminate" analysis -- doesn't see through further
+    // nesting (e.g. a branch whose entire content is itself another
+    // exhaustively-returning if isn't recognized), a known, documented gap.
     struct if_data {
         argument cond;
         std::vector<instr> then_body;
         std::vector<instr> else_body;
         std::vector<value> params;
-        std::optional<value> result;
+        bool exhaustively_returns = false;
+        std::vector<value> then_outputs;
+        std::vector<value> else_outputs;
+        std::vector<value> outputs;
     };
 
     struct loop_data {

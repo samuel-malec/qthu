@@ -212,30 +212,81 @@ namespace qthu::js2ct::lin {
             } else if (auto *ifd = std::get_if<hir::stmt::if_stmt>(&node.data)) {
                 auto condarg = lower_expr(sink, env, ifd->cond);
 
+                std::vector<sema::binding_id> live_bindings{};
                 std::vector<value> params{};
-                for (auto &[bid, val]: env.scope)
+                for (auto &[bid, val]: env.scope) {
+                    live_bindings.push_back(sema::binding_id{bid});
                     params.push_back(val);
+                }
 
                 std::vector<instr> then_body;
                 rename_env then_env = env;
                 lower_stmt(then_body, then_env, ifd->then_branch);
-                cleanup_env(then_env, then_body);
+                bool then_returns = !then_body.empty() && std::holds_alternative<ret_data>(then_body.back().data);
 
                 std::vector<instr> else_body;
+                rename_env else_env = env;
+                bool else_returns = false;
                 if (ifd->else_branch) {
-                    rename_env else_env = env;
                     lower_stmt(else_body, else_env, ifd->else_branch.value());
-                    cleanup_env(else_env, else_body);
+                    else_returns = !else_body.empty() && std::holds_alternative<ret_data>(else_body.back().data);
                 }
 
-                sink.push_back(instr{
-                    if_data{
-                        .cond = condarg,
-                        .then_body = std::move(then_body),
-                        .else_body = std::move(else_body),
-                        .params = std::move(params)
+                // Both branches definitely return: nothing after the if in
+                // this block can ever execute, so there's nothing to thread
+                // forward -- keep the simple single-"out" shape (see the
+                // exhaustively_returns comment on if_data's own definition).
+                bool exhaustively_returns = then_returns && ifd->else_branch && else_returns;
+
+                if (exhaustively_returns) {
+                    // Safe and correct here specifically: nothing follows the
+                    // if in this block (both branches return), so unlike the
+                    // general case, dropping every remaining live binding in
+                    // each branch's own scope can't discard something code
+                    // after the if still needs -- there is no code after it.
+                    cleanup_env(then_env, then_body);
+                    cleanup_env(else_env, else_body);
+
+                    sink.push_back(instr{
+                        if_data{
+                            .cond = condarg,
+                            .then_body = std::move(then_body),
+                            .else_body = std::move(else_body),
+                            .params = std::move(params),
+                            .exhaustively_returns = true,
+                        }
+                    });
+                } else {
+                    std::vector<value> then_outputs{};
+                    for (auto &bid: live_bindings)
+                        then_outputs.push_back(then_env.at(bid));
+
+                    // else_env starts as a copy of env either way; if there's
+                    // no explicit else branch it's never mutated, so this
+                    // naturally yields "live bindings pass through unchanged".
+                    std::vector<value> else_outputs{};
+                    for (auto &bid: live_bindings)
+                        else_outputs.push_back(else_env.at(bid));
+
+                    std::vector<value> outputs{};
+                    for (auto &bid: live_bindings) {
+                        value out = vn.fresh();
+                        outputs.push_back(out);
+                        env.reassign(bid, out);
                     }
-                });
+
+                    sink.push_back(instr{
+                        if_data{
+                            .cond = condarg,
+                            .then_body = std::move(then_body),
+                            .else_body = std::move(else_body),
+                            .params = std::move(params),
+                            .then_outputs = std::move(then_outputs),
+                            .else_outputs = std::move(else_outputs),
+                            .outputs = std::move(outputs),
+                        }
+                    });
+                }
             } else if (auto *st = std::get_if<hir::stmt::loop_stmt>(&node.data)) {
                 std::vector<sema::binding_id> live_bindings{};
                 std::vector<value> params{};

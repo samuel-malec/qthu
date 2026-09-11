@@ -286,17 +286,34 @@ namespace qthu::js2ct::print {
                 print_lin_instr(out, instr, depth + 2);
 
             pad(out, depth + 1);
+            out << "[ then outputs ] ";
+            for (auto &v: id->then_outputs) {
+                print_lin_value(out, v);
+                out << ' ';
+            }
+            out << '\n';
+
+            pad(out, depth + 1);
             out << "[ else ]\n";
 
             for (auto &instr: id->else_body)
                 print_lin_instr(out, instr, depth + 2);
 
-            if (id->result) {
-                pad(out, depth + 1);
-                out << "[ result ] ";
-                print_lin_value(out, *id->result);
-                out << '\n';
+            pad(out, depth + 1);
+            out << "[ else outputs ] ";
+            for (auto &v: id->else_outputs) {
+                print_lin_value(out, v);
+                out << ' ';
             }
+            out << '\n';
+
+            pad(out, depth + 1);
+            out << "[ outputs ] ";
+            for (auto &v: id->outputs) {
+                print_lin_value(out, v);
+                out << ' ';
+            }
+            out << '\n';
         } else if (auto *l = std::get_if<lin::loop_data>(&i.data)) {
             out << "[ loop ]\n";
 
