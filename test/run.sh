@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 #
-# Compiles and runs every .ct fixture under test/ct2qjs/ through cthuc and bcrun
+# Compiles and runs every .ct fixture under test/ct2qjs/ through ct2qjs and bcrun
 #
 # Usage: test/run.sh
 # Override the binaries with env vars if they're not in one of the usual
-# build directories: CTHUC=/path/to/cthuc BCRUN=/path/to/bcrun test/run.sh
+# build directories: CT2QJS=/path/to/ct2qjs BCRUN=/path/to/bcrun test/run.sh
 
 set -u
 
@@ -42,8 +42,8 @@ find_bin()
     return 1
 }
 
-CTHUC_BIN="$(find_bin cthuc "${CTHUC:-}")" || {
-    echo "error: could not find a built 'cthuc' binary. Build it first, or point to it with CTHUC=/path/to/cthuc" >&2
+CT2QJS_BIN="$(find_bin ct2qjs "${CT2QJS:-}")" || {
+    echo "error: could not find a built 'ct2qjs' binary. Build it first, or point to it with CT2QJS=/path/to/ct2qjs" >&2
     exit 2
 }
 BCRUN_BIN="$(find_bin bcrun "${BCRUN:-}")" || {
@@ -68,7 +68,7 @@ for ct_file in "${ct_files[@]}"; do
     name="$(basename "$ct_file")"
     tmp_qbc="$(mktemp)"
 
-    if ! compile_out="$("$CTHUC_BIN" "$ct_file" -p "$PRELUDE_DIR" -o "$tmp_qbc" 2>&1)"; then
+    if ! compile_out="$("$CT2QJS_BIN" "$ct_file" -p "$PRELUDE_DIR" -o "$tmp_qbc" 2>&1)"; then
         echo "FAIL  $name  (compile error)"
         echo "$compile_out" | sed 's/^/        /'
         fail=$((fail + 1))
