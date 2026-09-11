@@ -221,16 +221,37 @@ namespace qthu::js2ct::cthu {
                     function frame_fn = create_frame(params, fsig);
                     curr_struct->functions[frame_name] = std::move(frame_fn);
 
-                    emit(curr_fn, struct_name, "", {then_name}, {then_name});
-                    emit(curr_fn, struct_name, "", {else_name}, {else_name});
+                    // Reference each sibling closure by name before using it
+                    // as an opt/join operand -- struct_name callee_name -> ref
+                    // is the fn_ref idiom (matches loop_data's own loop_ref/
+                    // frame_ref below). The previous then/else lines here
+                    // used an empty operation string with in/out both set to
+                    // the callee's own name; that's not a valid fn_ref in
+                    // memory (aloc_slots() would reject `struct_name "" ->
+                    // name` -- there's no builtin or sibling function named
+                    // ""), but printing it collapses the empty op into bare
+                    // whitespace, and re-parsing that text happens to
+                    // re-tokenize the callee's name as the operation --
+                    // accidentally correct after a print/reparse round-trip,
+                    // but not something to rely on. frame_name had no such
+                    // accident: used directly as join's third operand with
+                    // no reference at all, it was never given a version in
+                    // this function's own slot allocation, hence "slot
+                    // alloc underflow for name: frame6".
+                    std::string then_ref = fresh_val("ref");
+                    std::string else_ref = fresh_val("ref");
+                    std::string frame_ref = fresh_val("ref");
+                    emit(curr_fn, struct_name, then_name, {}, {then_ref});
+                    emit(curr_fn, struct_name, else_name, {}, {else_ref});
+                    emit(curr_fn, struct_name, frame_name, {}, {frame_ref});
 
                     std::string alt1_name = fresh_val("alt");
                     std::string alt2_name = fresh_val("alt");
-                    emit(curr_fn, fsig, "opt", {cmp1, then_name}, {alt1_name});
-                    emit(curr_fn, fsig, "opt", {cmp3, else_name}, {alt2_name});
+                    emit(curr_fn, fsig, "opt", {cmp1, then_ref}, {alt1_name});
+                    emit(curr_fn, fsig, "opt", {cmp3, else_ref}, {alt2_name});
 
                     std::string cont = fresh_val("cont");
-                    emit(curr_fn, fsig, "join", {alt1_name, alt2_name, frame_name}, {cont});
+                    emit(curr_fn, fsig, "join", {alt1_name, alt2_name, frame_ref}, {cont});
 
                     std::vector call_args{cont};
                     for (auto &p: params)
