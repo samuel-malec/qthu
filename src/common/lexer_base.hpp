@@ -3,7 +3,6 @@
 #include <optional>
 #include <string_view>
 #include <ctype.h>
-#include <iostream>
 
 namespace qthu {
     inline int from_hex(char c) {

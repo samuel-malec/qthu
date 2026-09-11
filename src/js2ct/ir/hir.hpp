@@ -69,9 +69,6 @@ namespace qthu::js2ct::hir {
             std::vector<expr_id> elements;
         };
 
-        // obj.x = v / arr[i] = v, single-level only: `object` names the
-        // binding being updated directly (not a general sub-expression) --
-        // matches the parser's own single-level restriction.
         struct member_assign {
             sema::binding_id object;
             expr_id key;
@@ -120,11 +117,6 @@ namespace qthu::js2ct::hir {
         struct cont {
         };
 
-        // assert(expr); -- recognized syntactically as a call to the
-        // magic, never-declared name "assert" in statement position
-        // (ast2hir.hpp), not a real function call: sema/analysis.hpp's
-        // call resolution skips the normal "must be a declared function"
-        // check for this one name. Lowers straight to qjs_val_assert.
         struct assert_stmt {
             expr_id arg;
         };

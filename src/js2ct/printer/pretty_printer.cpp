@@ -2,155 +2,209 @@
 #include <functional>
 
 #include "pretty_printer.hpp"
+#include "../../common/visit.hpp"
 
 namespace qthu::js2ct::print {
     void pretty_printer::print_ast_expr(std::ostream &out, ast::expr &e, int depth) {
         pad(out, depth);
 
-        if (auto *lit = std::get_if<ast::int_lit>(&e.data))
-            out << "[ int_lit ] " << lit->value << '\n';
-        else if (auto *lit = std::get_if<ast::bool_lit>(&e.data))
-            out << "[ bool_lit ] " << std::boolalpha << lit->value << '\n';
-        else if (auto *lit = std::get_if<ast::str_lit>(&e.data))
-            out << "[ str_lit ] \"" << lit->value << "\"\n";
-        else if (auto *id = std::get_if<ast::var>(&e.data))
-            out << "[ var ] " << id->name << '\n';
-        else if (auto *u = std::get_if<ast::unary>(&e.data)) {
-            out << "[ unary " << u->op << " ]\n";
-            print_ast_expr(out, *u->sub, depth + 1);
-        } else if (auto *b = std::get_if<ast::binary>(&e.data)) {
-            out << "[ binary " << b->op << " ]\n";
-            print_ast_expr(out, *b->left, depth + 1);
-            print_ast_expr(out, *b->right, depth + 1);
-        } else if (auto *a = std::get_if<ast::assign>(&e.data)) {
-            out << "[ assign ]\n";
+        std::visit(overloaded{
+                       [ & ](ast::int_lit &lit) {
+                           out << "[ int_lit ] " << lit.value << '\n';
+                       },
+                       [ & ](ast::bool_lit &lit) {
+                           out << "[ bool_lit ] " << std::boolalpha << lit.value << '\n';
+                       },
+                       [ & ](ast::str_lit &lit) {
+                           out << "[ str_lit ] \"" << lit.value << "\"\n";
+                       },
+                       [ & ](ast::var &id) {
+                           out << "[ var ] " << id.name << '\n';
+                       },
+                       [ & ](ast::unary &u) {
+                           out << "[ unary " << u.op << " ]\n";
+                           print_ast_expr(out, *u.sub, depth + 1);
+                       },
+                       [ & ](ast::binary &b) {
+                           out << "[ binary " << b.op << " ]\n";
+                           print_ast_expr(out, *b.left, depth + 1);
+                           print_ast_expr(out, *b.right, depth + 1);
+                       },
+                       [ & ](ast::assign &a) {
+                           out << "[ assign ]\n";
 
-            pad(out, depth + 1);
-            out << "[ target ]\n";
-            if (auto *v = std::get_if<ast::var>(&a->target)) {
-                pad(out, depth + 2);
-                out << "[ var ] " << v->name << '\n';
-            } else {
-                auto &m = std::get<ast::member>(a->target);
-                print_ast_expr(out, *m.object, depth + 2);
-                print_ast_expr(out, *m.key, depth + 2);
-            }
+                           pad(out, depth + 1);
+                           out << "[ target ]\n";
+                           if (auto *v = std::get_if<ast::var>(&a.target)) {
+                               pad(out, depth + 2);
+                               out << "[ var ] " << v->name << '\n';
+                           } else {
+                               auto &m = std::get<ast::member>(a.target);
+                               print_ast_expr(out, *m.object, depth + 2);
+                               print_ast_expr(out, *m.key, depth + 2);
+                           }
 
-            pad(out, depth + 1);
-            out << "[ value ]\n";
-            print_ast_expr(out, *a->value, depth + 2);
-        } else if (auto *c = std::get_if<ast::call>(&e.data)) {
-            out << "[ call ]\n";
+                           pad(out, depth + 1);
+                           out << "[ value ]\n";
+                           print_ast_expr(out, *a.value, depth + 2);
+                       },
+                       [ & ](ast::call &c) {
+                           out << "[ call ]\n";
 
-            pad(out, depth + 1);
-            out << "[ callee ]\n";
-            print_ast_expr(out, *c->callee, depth + 2);
+                           pad(out, depth + 1);
+                           out << "[ callee ]\n";
+                           print_ast_expr(out, *c.callee, depth + 2);
 
-            pad(out, depth + 1);
-            out << "[ args ]\n";
+                           pad(out, depth + 1);
+                           out << "[ args ]\n";
 
-            for (auto &arg: c->args)
-                print_ast_expr(out, *arg, depth + 2);
-        } else if (auto *m = std::get_if<ast::member>(&e.data)) {
-            out << "[ member" << (m->computed ? " computed" : "") << " ]\n";
-            print_ast_expr(out, *m->object, depth + 1);
-            print_ast_expr(out, *m->key, depth + 1);
-        } else if (auto *ol = std::get_if<ast::object_lit>(&e.data)) {
-            out << "[ object_lit ]\n";
-            for (auto &[key, val]: ol->props) {
-                pad(out, depth + 1);
-                out << "[ prop ] " << key << '\n';
-                print_ast_expr(out, *val, depth + 2);
-            }
-        } else if (auto *al = std::get_if<ast::array_lit>(&e.data)) {
-            out << "[ array_lit ]\n";
-            for (auto &elem: al->elements)
-                print_ast_expr(out, *elem, depth + 1);
-        }
+                           for (auto &arg: c.args)
+                               print_ast_expr(out, *arg, depth + 2);
+                       },
+                       [ & ](ast::member &m) {
+                           out << "[ member" << (m.computed ? " computed" : "") << " ]\n";
+                           print_ast_expr(out, *m.object, depth + 1);
+                           print_ast_expr(out, *m.key, depth + 1);
+                       },
+                       [ & ](ast::object_lit &ol) {
+                           out << "[ object_lit ]\n";
+                           for (auto &[key, val]: ol.props) {
+                               pad(out, depth + 1);
+                               out << "[ prop ] " << key << '\n';
+                               print_ast_expr(out, *val, depth + 2);
+                           }
+                       },
+                       [ & ](ast::array_lit &al) {
+                           out << "[ array_lit ]\n";
+                           for (auto &elem: al.elements)
+                               print_ast_expr(out, *elem, depth + 1);
+                       },
+                   }, e.data);
     }
 
     void pretty_printer::print_ast_stmt(std::ostream &out, ast::stmt &s, int depth) {
         pad(out, depth);
 
-        if (auto *b = std::get_if<ast::block>(&s.data)) {
-            out << "[ block ]\n";
+        std::visit(overloaded{
+                       [ & ](ast::block &b) {
+                           out << "[ block ]\n";
 
-            for (auto &stmt: b->stmts)
-                print_ast_stmt(out, *stmt, depth + 1);
-        } else if (auto *vd = std::get_if<ast::var_declaration>(&s.data)) {
-            out << "[ var_declaration ]\n";
+                           for (auto &stmt: b.stmts)
+                               print_ast_stmt(out, *stmt, depth + 1);
+                       },
+                       [ & ](ast::var_declaration &vd) {
+                           out << "[ var_declaration ]\n";
 
-            for (auto &decl: vd->declarators) {
-                pad(out, depth + 1);
+                           for (auto &decl: vd.declarators) {
+                               pad(out, depth + 1);
 
-                switch (vd->kind) {
-                    case ast::var_declaration::kind_t::let:
-                        out << "[ let ] ";
-                        break;
+                               switch (vd.kind) {
+                                   case ast::var_declaration::kind_t::let:
+                                       out << "[ let ] ";
+                                       break;
 
-                    case ast::var_declaration::kind_t::var:
-                        out << "[ var ] ";
-                        break;
+                                   case ast::var_declaration::kind_t::var:
+                                       out << "[ var ] ";
+                                       break;
 
-                    case ast::var_declaration::kind_t::constant:
-                        out << "[ const ] ";
-                        break;
-                }
+                                   case ast::var_declaration::kind_t::constant:
+                                       out << "[ const ] ";
+                                       break;
+                               }
 
-                out << decl.name << '\n';
+                               out << decl.name << '\n';
 
-                if (decl.init)
-                    print_ast_expr(out, *decl.init, depth + 2);
-            }
-        } else if (auto *fd = std::get_if<ast::fn_declaration>(&s.data)) {
-            out << "[ fn_decl ]";
-            out << " " << fd->name << "( ";
-            for (size_t i = 0; i < fd->params.size(); ++i) {
-                auto &p = fd->params[i];
-                out << " " << p.name << (i == fd->params.size() - 1 ? "" : ", ");
-            }
+                               if (decl.init)
+                                   print_ast_expr(out, *decl.init, depth + 2);
+                           }
+                       },
+                       [ & ](ast::fn_declaration &fd) {
+                           out << "[ fn_decl ]";
+                           out << " " << fd.name << "( ";
+                           for (size_t i = 0; i < fd.params.size(); ++i) {
+                               auto &p = fd.params[i];
+                               out << " " << p.name << (i == fd.params.size() - 1 ? "" : ", ");
+                           }
 
-            out << " )\n";
-            for (auto &s: fd->body.stmts)
-                print_ast_stmt(out, *s, 1);
-        } else if (auto *r = std::get_if<ast::ret>(&s.data)) {
-            out << "[ return ]";
+                           out << " )\n";
+                           for (auto &s: fd.body.stmts)
+                               print_ast_stmt(out, *s, 1);
+                       },
+                       [ & ](ast::ret &r) {
+                           out << "[ return ]";
 
-            if (r->value) {
-                out << '\n';
-                print_ast_expr(out, *r->value, depth + 1);
-            } else
-                out << '\n';
-        } else if (auto *i = std::get_if<ast::if_stmt>(&s.data)) {
-            out << "[ if ]\n";
-            pad(out, depth + 1);
-            out << "[ condition ]\n";
-            print_ast_expr(out, i->cond, depth + 2);
+                           if (r.value) {
+                               out << '\n';
+                               print_ast_expr(out, *r.value, depth + 1);
+                           } else
+                               out << '\n';
+                       },
+                       [ & ](ast::if_stmt &i) {
+                           out << "[ if ]\n";
+                           pad(out, depth + 1);
+                           out << "[ condition ]\n";
+                           print_ast_expr(out, i.cond, depth + 2);
 
-            pad(out, depth + 1);
-            out << "[ then ]\n";
-            print_ast_stmt(out, *i->then_branch, depth + 2);
+                           pad(out, depth + 1);
+                           out << "[ then ]\n";
+                           print_ast_stmt(out, *i.then_branch, depth + 2);
 
-            if (i->else_branch) {
-                pad(out, depth + 1);
-                out << "[ else ]\n";
-                print_ast_stmt(out, *i->else_branch, depth + 2);
-            }
-        } else if (auto *w = std::get_if<ast::while_stmt>(&s.data)) {
-            out << "[ while ]\n";
+                           if (i.else_branch) {
+                               pad(out, depth + 1);
+                               out << "[ else ]\n";
+                               print_ast_stmt(out, *i.else_branch, depth + 2);
+                           }
+                       },
+                       [ & ](ast::while_stmt &w) {
+                           out << "[ while ]\n";
 
-            pad(out, depth + 1);
-            out << "[ condition ]\n";
-            print_ast_expr(out, w->cond, depth + 2);
+                           pad(out, depth + 1);
+                           out << "[ condition ]\n";
+                           print_ast_expr(out, w.cond, depth + 2);
 
-            print_ast_stmt(out, *w->body, depth + 1);
-        } else if (auto *e = std::get_if<ast::expr_stmt>(&s.data)) {
-            out << "[ expr_stmt ]\n";
-            print_ast_expr(out, e->value, depth + 1);
-        } else if (std::get_if<ast::brk>(&s.data))
-            out << "[ break ]\n";
-        else if (std::get_if<ast::cont>(&s.data))
-            out << "[ continue ]\n";
+                           print_ast_stmt(out, *w.body, depth + 1);
+                       },
+                       [ & ](ast::do_while_stmt &dw) {
+                           out << "[ do_while ]\n";
+
+                           pad(out, depth + 1);
+                           out << "[ condition ]\n";
+                           print_ast_expr(out, dw.cond, depth + 2);
+
+                           print_ast_stmt(out, *dw.body, depth + 1);
+                       },
+                       [ & ](ast::for_stmt &fl) {
+                           out << "[ for ]\n";
+
+                           if (fl.init) {
+                               pad(out, depth + 1);
+                               out << "[ init ]\n";
+                               print_ast_stmt(out, *fl.init, depth + 2);
+                           }
+                           if (fl.cond) {
+                               pad(out, depth + 1);
+                               out << "[ condition ]\n";
+                               print_ast_expr(out, *fl.cond, depth + 2);
+                           }
+                           if (fl.update) {
+                               pad(out, depth + 1);
+                               out << "[ update ]\n";
+                               print_ast_expr(out, *fl.update, depth + 2);
+                           }
+
+                           print_ast_stmt(out, *fl.body, depth + 1);
+                       },
+                       [ & ](ast::expr_stmt &e) {
+                           out << "[ expr_stmt ]\n";
+                           print_ast_expr(out, e.value, depth + 1);
+                       },
+                       [ & ](ast::brk &) {
+                           out << "[ break ]\n";
+                       },
+                       [ & ](ast::cont &) {
+                           out << "[ continue ]\n";
+                       },
+                   }, s.data);
     }
 
     void pretty_printer::print_ast(std::ostream &out, ast::program &ast) {
@@ -164,198 +218,217 @@ namespace qthu::js2ct::print {
     }
 
     void pretty_printer::print_lin_constant(std::ostream &out, const lin::constant &c) {
-        if (auto *i = std::get_if<uint64_t>(&c))
-            out << *i;
-        else if (auto *b = std::get_if<bool>(&c))
-            out << (*b ? "true" : "false");
+        std::visit(overloaded{
+                       [ & ](uint64_t i) { out << i; },
+                       [ & ](bool b) { out << (b ? "true" : "false"); },
+                   }, c);
     }
 
     void pretty_printer::print_lin_argument(std::ostream &out, const lin::argument &arg) {
-        if (auto *c = std::get_if<lin::constant>(&arg))
-            print_lin_constant(out, *c);
-        else if (auto *v = std::get_if<lin::value>(&arg))
-            print_lin_value(out, *v);
+        std::visit(overloaded{
+                       [ & ](const lin::constant &c) { print_lin_constant(out, c); },
+                       [ & ](const lin::value &v) { print_lin_value(out, v); },
+                   }, arg);
     }
 
     void pretty_printer::print_lin_instr(std::ostream &out, const lin::instr &i, int depth) {
         pad(out, depth);
-        if (auto *ud = std::get_if<lin::cons_data>(&i.data)) {
-            out << "[ cons ] ";
-            print_lin_value(out, ud->target);
-            out << " = ";
-            print_lin_constant(out, ud->c);
-            out << '\n';
-        } else if (auto *sd = std::get_if<lin::str_cons_data>(&i.data)) {
-            out << "[ cons ] ";
-            print_lin_value(out, sd->target);
-            out << " = \"" << sd->str << "\"\n";
-        } else if (auto *gd = std::get_if<lin::get_data>(&i.data)) {
-            out << "[ get ] ";
-            print_lin_value(out, gd->target);
-            out << " = ";
-            print_lin_argument(out, gd->obj);
-            out << "[";
-            print_lin_argument(out, gd->key);
-            out << "]\n";
-        } else if (auto *cod = std::get_if<lin::cons_obj_data>(&i.data)) {
-            out << "[ cons_obj ] ";
-            print_lin_value(out, cod->target);
-            out << " = {}\n";
-        } else if (auto *cad = std::get_if<lin::cons_arr_data>(&i.data)) {
-            out << "[ cons_arr ] ";
-            print_lin_value(out, cad->target);
-            out << " = []\n";
-        } else if (auto *sd = std::get_if<lin::set_data>(&i.data)) {
-            out << "[ set ] ";
-            print_lin_value(out, sd->target);
-            out << " = ";
-            print_lin_argument(out, sd->obj);
-            out << "[";
-            print_lin_argument(out, sd->key);
-            out << "] = ";
-            print_lin_argument(out, sd->val);
-            out << '\n';
-        } else if (auto *u = std::get_if<lin::unary_data>(&i.data)) {
-            out << "[ unary ] ";
-            print_lin_value(out, u->target);
-            out << " = ";
 
-            out << u->op << " ";
-            print_lin_argument(out, u->arg1);
-            out << '\n';
-        } else if (auto *b = std::get_if<lin::binary_data>(&i.data)) {
-            out << "[ binary ] ";
-            print_lin_value(out, b->target);
-            out << " = ";
+        std::visit(overloaded{
+                       [ & ](const lin::cons_data &ud) {
+                           out << "[ cons ] ";
+                           print_lin_value(out, ud.target);
+                           out << " = ";
+                           print_lin_constant(out, ud.c);
+                           out << '\n';
+                       },
+                       [ & ](const lin::str_cons_data &sd) {
+                           out << "[ cons ] ";
+                           print_lin_value(out, sd.target);
+                           out << " = \"" << sd.str << "\"\n";
+                       },
+                       [ & ](const lin::get_data &gd) {
+                           out << "[ get ] ";
+                           print_lin_value(out, gd.target);
+                           out << " = ";
+                           print_lin_argument(out, gd.obj);
+                           out << "[";
+                           print_lin_argument(out, gd.key);
+                           out << "]\n";
+                       },
+                       [ & ](const lin::cons_obj_data &cod) {
+                           out << "[ cons_obj ] ";
+                           print_lin_value(out, cod.target);
+                           out << " = {}\n";
+                       },
+                       [ & ](const lin::cons_arr_data &cad) {
+                           out << "[ cons_arr ] ";
+                           print_lin_value(out, cad.target);
+                           out << " = []\n";
+                       },
+                       [ & ](const lin::set_data &sd) {
+                           out << "[ set ] ";
+                           print_lin_value(out, sd.target);
+                           out << " = ";
+                           print_lin_argument(out, sd.obj);
+                           out << "[";
+                           print_lin_argument(out, sd.key);
+                           out << "] = ";
+                           print_lin_argument(out, sd.val);
+                           out << '\n';
+                       },
+                       [ & ](const lin::unary_data &u) {
+                           out << "[ unary ] ";
+                           print_lin_value(out, u.target);
+                           out << " = ";
 
-            print_lin_argument(out, b->arg1);
-            out << " " << b->op << " ";
-            print_lin_argument(out, b->arg2);
+                           out << u.op << " ";
+                           print_lin_argument(out, u.arg1);
+                           out << '\n';
+                       },
+                       [ & ](const lin::binary_data &b) {
+                           out << "[ binary ] ";
+                           print_lin_value(out, b.target);
+                           out << " = ";
 
-            out << '\n';
-        } else if (auto *c = std::get_if<lin::copy_data>(&i.data)) {
-            out << "[ copy ] ";
-            print_lin_value(out, c->target);
-            out << " = ";
-            print_lin_argument(out, c->arg1);
-            out << '\n';
-        } else if (auto *dd = std::get_if<lin::dup_data>(&i.data)) {
-            out << "[ dup ] ";
-            print_lin_argument(out, dd->arg1);
-            out << " -> ";
-            print_lin_value(out, dd->first);
-            out << " , ";
-            print_lin_value(out, dd->second);
-            out << '\n';
-        } else if (auto *dr = std::get_if<lin::drop_data>(&i.data)) {
-            out << "[ drop ] ";
-            print_lin_value(out, dr->target);
-            out << '\n';
-        } else if (auto *c = std::get_if<lin::call_data>(&i.data)) {
-            out << "[ call ] ";
-            print_lin_value(out, c->target);
-            out << " = fn#" << c->callee.value << "( ";
+                           print_lin_argument(out, b.arg1);
+                           out << " " << b.op << " ";
+                           print_lin_argument(out, b.arg2);
 
-            for (size_t idx = 0; idx < c->args.size(); idx++) {
-                print_lin_argument(out, c->args[idx]);
+                           out << '\n';
+                       },
+                       [ & ](const lin::copy_data &c) {
+                           out << "[ copy ] ";
+                           print_lin_value(out, c.target);
+                           out << " = ";
+                           print_lin_argument(out, c.arg1);
+                           out << '\n';
+                       },
+                       [ & ](const lin::dup_data &dd) {
+                           out << "[ dup ] ";
+                           print_lin_argument(out, dd.arg1);
+                           out << " -> ";
+                           print_lin_value(out, dd.first);
+                           out << " , ";
+                           print_lin_value(out, dd.second);
+                           out << '\n';
+                       },
+                       [ & ](const lin::drop_data &dr) {
+                           out << "[ drop ] ";
+                           print_lin_value(out, dr.target);
+                           out << '\n';
+                       },
+                       [ & ](const lin::call_data &c) {
+                           out << "[ call ] ";
+                           print_lin_value(out, c.target);
+                           out << " = fn#" << c.callee.value << "( ";
 
-                if (idx + 1 != c->args.size())
-                    out << ", ";
-            }
+                           for (size_t idx = 0; idx < c.args.size(); idx++) {
+                               print_lin_argument(out, c.args[idx]);
 
-            out << " )\n";
-        } else if (auto *r = std::get_if<lin::ret_data>(&i.data)) {
-            out << "[ return ] ";
+                               if (idx + 1 != c.args.size())
+                                   out << ", ";
+                           }
 
-            if (r->arg)
-                print_lin_argument(out, *r->arg);
+                           out << " )\n";
+                       },
+                       [ & ](const lin::ret_data &r) {
+                           out << "[ return ] ";
 
-            out << '\n';
-        } else if (auto *ad = std::get_if<lin::assert_data>(&i.data)) {
-            out << "[ assert ] ";
-            print_lin_argument(out, ad->arg);
-            out << '\n';
-        } else if (auto *id = std::get_if<lin::if_data>(&i.data)) {
-            out << "[ if ]\n";
+                           if (r.arg)
+                               print_lin_argument(out, *r.arg);
 
-            pad(out, depth + 1);
-            out << "[ condition ] ";
-            print_lin_argument(out, id->cond);
-            out << '\n';
+                           out << '\n';
+                       },
+                       [ & ](const lin::assert_data &ad) {
+                           out << "[ assert ] ";
+                           print_lin_argument(out, ad.arg);
+                           out << '\n';
+                       },
+                       [ & ](const lin::if_data &id) {
+                           out << "[ if ]\n";
 
-            pad(out, depth + 1);
-            out << "[ then ]\n";
+                           pad(out, depth + 1);
+                           out << "[ condition ] ";
+                           print_lin_argument(out, id.cond);
+                           out << '\n';
 
-            for (auto &instr: id->then_body)
-                print_lin_instr(out, instr, depth + 2);
+                           pad(out, depth + 1);
+                           out << "[ then ]\n";
 
-            pad(out, depth + 1);
-            out << "[ then outputs ] ";
-            for (auto &v: id->then_outputs) {
-                print_lin_value(out, v);
-                out << ' ';
-            }
-            out << '\n';
+                           for (auto &instr: id.then_body)
+                               print_lin_instr(out, instr, depth + 2);
 
-            pad(out, depth + 1);
-            out << "[ else ]\n";
+                           pad(out, depth + 1);
+                           out << "[ then outputs ] ";
+                           for (auto &v: id.then_outputs) {
+                               print_lin_value(out, v);
+                               out << ' ';
+                           }
+                           out << '\n';
 
-            for (auto &instr: id->else_body)
-                print_lin_instr(out, instr, depth + 2);
+                           pad(out, depth + 1);
+                           out << "[ else ]\n";
 
-            pad(out, depth + 1);
-            out << "[ else outputs ] ";
-            for (auto &v: id->else_outputs) {
-                print_lin_value(out, v);
-                out << ' ';
-            }
-            out << '\n';
+                           for (auto &instr: id.else_body)
+                               print_lin_instr(out, instr, depth + 2);
 
-            pad(out, depth + 1);
-            out << "[ outputs ] ";
-            for (auto &v: id->outputs) {
-                print_lin_value(out, v);
-                out << ' ';
-            }
-            out << '\n';
-        } else if (auto *l = std::get_if<lin::loop_data>(&i.data)) {
-            out << "[ loop ]\n";
+                           pad(out, depth + 1);
+                           out << "[ else outputs ] ";
+                           for (auto &v: id.else_outputs) {
+                               print_lin_value(out, v);
+                               out << ' ';
+                           }
+                           out << '\n';
 
-            pad(out, depth + 1);
-            out << "[ cond ]\n";
-            for (auto &instr: l->cond_body)
-                print_lin_instr(out, instr, depth + 2);
-            pad(out, depth + 1);
-            out << "[ condition value ] ";
-            print_lin_argument(out, l->cond);
-            out << '\n';
+                           pad(out, depth + 1);
+                           out << "[ outputs ] ";
+                           for (auto &v: id.outputs) {
+                               print_lin_value(out, v);
+                               out << ' ';
+                           }
+                           out << '\n';
+                       },
+                       [ & ](const lin::loop_data &l) {
+                           out << "[ loop ]\n";
 
-            pad(out, depth + 1);
-            out << "[ dispatch args ] ";
-            for (auto &v: l->dispatch_args) {
-                print_lin_value(out, v);
-                out << ' ';
-            }
-            out << '\n';
+                           pad(out, depth + 1);
+                           out << "[ cond ]\n";
+                           for (auto &instr: l.cond_body)
+                               print_lin_instr(out, instr, depth + 2);
+                           pad(out, depth + 1);
+                           out << "[ condition value ] ";
+                           print_lin_argument(out, l.cond);
+                           out << '\n';
 
-            pad(out, depth + 1);
-            out << "[ body ]\n";
-            for (auto &instr: l->body)
-                print_lin_instr(out, instr, depth + 2);
+                           pad(out, depth + 1);
+                           out << "[ dispatch args ] ";
+                           for (auto &v: l.dispatch_args) {
+                               print_lin_value(out, v);
+                               out << ' ';
+                           }
+                           out << '\n';
 
-            pad(out, depth + 1);
-            out << "[ outputs ] ";
-            for (auto &v: l->outputs) {
-                print_lin_value(out, v);
-                out << ' ';
-            }
-            out << '\n';
-        } else if (std::get_if<lin::brk_data>(&i.data)) {
-            out << "[ break ]\n";
-        } else if (std::get_if<lin::cont_data>(&i.data)) {
-            out << "[ continue ]\n";
-        } else
-            assert(false && "unimplemented\n");
+                           pad(out, depth + 1);
+                           out << "[ body ]\n";
+                           for (auto &instr: l.body)
+                               print_lin_instr(out, instr, depth + 2);
+
+                           pad(out, depth + 1);
+                           out << "[ outputs ] ";
+                           for (auto &v: l.outputs) {
+                               print_lin_value(out, v);
+                               out << ' ';
+                           }
+                           out << '\n';
+                       },
+                       [ & ](const lin::brk_data &) {
+                           out << "[ break ]\n";
+                       },
+                       [ & ](const lin::cont_data &) {
+                           out << "[ continue ]\n";
+                       },
+                   }, i.data);
     }
 
     void pretty_printer::print_lin_function(std::ostream &out, const lin::function &fn) {
@@ -371,14 +444,6 @@ namespace qthu::js2ct::print {
         for (auto &fn: p.functions)
             print_lin_function(out, fn);
     }
-
-    template<typename... Ts>
-    struct overloaded : Ts... {
-        using Ts::operator()...;
-    };
-
-    template<typename... Ts>
-    overloaded(Ts...) -> overloaded<Ts...>;
 
     void print_indent(std::ostream &out, int depth) {
         for (int i = 0; i < depth; ++i)

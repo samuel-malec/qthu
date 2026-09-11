@@ -28,13 +28,6 @@ namespace qthu::js2ct::lin {
         value target;
     };
 
-    // A string literal is deliberately its own instr kind, not folded into
-    // cons_data/constant: constant feeds into `argument`, which every binary/
-    // unary/call operand accepts via an implicit conversion -- adding
-    // std::string to that variant made std::string-valued `in`/`out` name
-    // lists (used throughout linear2cthu.hpp's emit() calls) ambiguously
-    // constructible as either vector<std::string> or vector<argument>, since
-    // a plain string now implicitly converts to argument through constant.
     struct str_cons_data {
         std::string str;
         value target;
@@ -54,9 +47,6 @@ namespace qthu::js2ct::lin {
         value target;
     };
 
-    // obj[key] = val, producing the (linear) updated object -- the field is
-    // named `val`, not `value`, so it doesn't shadow the `value` type name
-    // needed for `target`'s own declaration right below it.
     struct set_data {
         argument obj;
         argument key;

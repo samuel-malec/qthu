@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../common/visit.hpp"
 #include "../ir/cthu.hpp"
 #include "../ir/linear.hpp"
 #include "../printer/pretty_printer.hpp"
@@ -91,11 +92,6 @@ namespace qthu::js2ct::cthu {
             return "f_" + compact_run('j', n) + "_j";
         }
 
-        // Pack `values` into a single array (cons_arr + positional set per element),
-        // returning the name holding the final array. Needed because a cthu function/
-        // call can only ever propagate one output (QuickJS functions return a single
-        // value) — this is how a loop's N live bindings travel through opt/join/call
-        // as one value instead of N separately-declared (and silently truncated) outputs.
         std::string pack_values(function &fn, const std::vector<std::string> &values) {
             std::string cur = fresh_val("arr");
             emit(fn, "jsvalue", "cons_arr", {}, {cur});
@@ -109,9 +105,6 @@ namespace qthu::js2ct::cthu {
             return cur;
         }
 
-        // Inverse of pack_values: unpack `packed` positionally into `targets`,
-        // dup'ing the array for every element but the last (get consumes its array
-        // operand, mirroring qjs_val_get's obj x key -> value linear discipline).
         void unpack_values(function &fn, const std::string &packed, const std::vector<std::string> &targets) {
             std::string cur = packed;
             for (size_t k = 0; k < targets.size(); ++k) {
@@ -164,59 +157,63 @@ namespace qthu::js2ct::cthu {
             function curr_fn{};
 
             for (auto &i: ins) {
-                if (auto *cd = std::get_if<lin::cons_data>(&i.data)) {
-                    if (auto *int_val = std::get_if<uint64_t>(&cd->c))
-                        emit(curr_fn, "jsvalue", "cons_" + std::to_string(*int_val), {}, {cd->target});
-                    else
-                        emit(curr_fn, "jsvalue", "cons_" + std::string(std::get<bool>(cd->c) ? "true" : "false"), {},
-                             {cd->target});
-                } else if (auto *sd = std::get_if<lin::str_cons_data>(&i.data)) {
-                    insn ins{"jsvalue", "cons_str", {}, args2str({sd->target})};
-                    ins.literal = sd->str;
-                    curr_fn.body.push_back(std::move(ins));
-                } else if (auto *gd = std::get_if<lin::get_data>(&i.data))
-                    emit(curr_fn, "jsvalue", "get", {gd->obj, gd->key}, {gd->target});
-
-                else if (auto *cod = std::get_if<lin::cons_obj_data>(&i.data))
-                    emit(curr_fn, "jsvalue", "cons_obj", {}, {cod->target});
-
-                else if (auto *cad = std::get_if<lin::cons_arr_data>(&i.data))
-                    emit(curr_fn, "jsvalue", "cons_arr", {}, {cad->target});
-
-                else if (auto *sd = std::get_if<lin::set_data>(&i.data))
-                    emit(curr_fn, "jsvalue", "set", {sd->obj, sd->key, sd->val}, {sd->target});
-
-                else if (auto *u = std::get_if<lin::unary_data>(&i.data))
-                    emit(curr_fn, "jsvalue", op_to_str(u->op), {u->arg1}, {u->target});
-
-                else if (auto *b = std::get_if<lin::binary_data>(&i.data))
-                    emit(curr_fn, "jsvalue", op_to_str(b->op), {b->arg1, b->arg2}, {b->target});
-
-                else if (auto *c = std::get_if<lin::copy_data>(&i.data))
-                    emit(curr_fn, "jsvalue", "copy", {c->arg1}, {c->target});
-
-                else if (auto *dd = std::get_if<lin::dup_data>(&i.data))
-                    emit(curr_fn, "jsvalue", "dup", {dd->arg1}, {dd->first, dd->second});
-
-                else if (auto *dr = std::get_if<lin::drop_data>(&i.data))
-                    emit(curr_fn, "jsvalue", "drop", {}, {dr->target});
-
-                else if (auto *id = std::get_if<lin::if_data>(&i.data)) {
+                std::visit(overloaded{
+                               [ & ](lin::cons_data &cd) {
+                                   if (auto *int_val = std::get_if<uint64_t>(&cd.c))
+                                       emit(curr_fn, "jsvalue", "cons_" + std::to_string(*int_val), {}, {cd.target});
+                                   else
+                                       emit(curr_fn, "jsvalue",
+                                            "cons_" + std::string(std::get<bool>(cd.c) ? "true" : "false"), {},
+                                            {cd.target});
+                               },
+                               [ & ](lin::str_cons_data &sd) {
+                                   insn new_insn{"jsvalue", "cons_str", {}, args2str({sd.target})};
+                                   new_insn.literal = sd.str;
+                                   curr_fn.body.push_back(std::move(new_insn));
+                               },
+                               [ & ](lin::get_data &gd) {
+                                   emit(curr_fn, "jsvalue", "get", {gd.obj, gd.key}, {gd.target});
+                               },
+                               [ & ](lin::cons_obj_data &cod) {
+                                   emit(curr_fn, "jsvalue", "cons_obj", {}, {cod.target});
+                               },
+                               [ & ](lin::cons_arr_data &cad) {
+                                   emit(curr_fn, "jsvalue", "cons_arr", {}, {cad.target});
+                               },
+                               [ & ](lin::set_data &sd) {
+                                   emit(curr_fn, "jsvalue", "set", {sd.obj, sd.key, sd.val}, {sd.target});
+                               },
+                               [ & ](lin::unary_data &u) {
+                                   emit(curr_fn, "jsvalue", op_to_str(u.op), {u.arg1}, {u.target});
+                               },
+                               [ & ](lin::binary_data &b) {
+                                   emit(curr_fn, "jsvalue", op_to_str(b.op), {b.arg1, b.arg2}, {b.target});
+                               },
+                               [ & ](lin::copy_data &c) {
+                                   emit(curr_fn, "jsvalue", "copy", {c.arg1}, {c.target});
+                               },
+                               [ & ](lin::dup_data &dd) {
+                                   emit(curr_fn, "jsvalue", "dup", {dd.arg1}, {dd.first, dd.second});
+                               },
+                               [ & ](lin::drop_data &dr) {
+                                   emit(curr_fn, "jsvalue", "drop", {}, {dr.target});
+                               },
+                               [ & ](lin::if_data &id) {
                     std::string cmp1 = fresh_val("cmp");
                     std::string cmp2 = fresh_val("cmp");
                     std::string cmp3 = fresh_val("cmp");
 
-                    emit(curr_fn, "jsvalue", "dup", args2str({id->cond}), {cmp1, cmp2});
+                    emit(curr_fn, "jsvalue", "dup", args2str({id.cond}), {cmp1, cmp2});
                     emit(curr_fn, "jsvalue", "not", {cmp2}, {cmp3});
 
                     std::string then_name = fresh_val("then");
                     std::string else_name = fresh_val("else");
                     std::string frame_name = fresh_val("frame");
 
-                    std::vector<std::string> params = vals2str(id->params);
+                    std::vector<std::string> params = vals2str(id.params);
                     std::string fsig = call_signature_name(params.size());
 
-                    if (id->exhaustively_returns) {
+                    if (id.exhaustively_returns) {
                         // Both branches always `return`: nothing after the if
                         // in this block ever executes, so there's nothing to
                         // thread forward. Keep the simple, single-"out"
@@ -229,8 +226,8 @@ namespace qthu::js2ct::cthu {
                         // anything literally named "out" in its own body,
                         // which is what marks it as producing a value at all
                         // (structure_builder::lower(), P2.6).
-                        lower_fn(then_name, id->then_body);
-                        lower_fn(else_name, id->else_body);
+                        lower_fn(then_name, id.then_body);
+                        lower_fn(else_name, id.else_body);
                         curr_struct->functions[then_name].in = params;
                         curr_struct->functions[then_name].out = {"out"};
                         curr_struct->functions[else_name].in = params;
@@ -246,14 +243,14 @@ namespace qthu::js2ct::cthu {
                         // to collect those instructions for use as
                         // lower_fn's `extra`).
                         function then_pack_scratch{};
-                        std::string then_packed = pack_values(then_pack_scratch, vals2str(id->then_outputs));
-                        lower_fn(then_name, id->then_body, then_pack_scratch.body);
+                        std::string then_packed = pack_values(then_pack_scratch, vals2str(id.then_outputs));
+                        lower_fn(then_name, id.then_body, then_pack_scratch.body);
                         curr_struct->functions[then_name].in = params;
                         curr_struct->functions[then_name].out = {then_packed};
 
                         function else_pack_scratch{};
-                        std::string else_packed = pack_values(else_pack_scratch, vals2str(id->else_outputs));
-                        lower_fn(else_name, id->else_body, else_pack_scratch.body);
+                        std::string else_packed = pack_values(else_pack_scratch, vals2str(id.else_outputs));
+                        lower_fn(else_name, id.else_body, else_pack_scratch.body);
                         curr_struct->functions[else_name].in = params;
                         curr_struct->functions[else_name].out = {else_packed};
                     }
@@ -289,37 +286,38 @@ namespace qthu::js2ct::cthu {
                     for (auto &p: params)
                         call_args.push_back(p);
 
-                    if (id->exhaustively_returns)
+                    if (id.exhaustively_returns)
                         emit(curr_fn, fsig, "call", call_args, {"out"});
                     else {
                         std::string packed_result = fresh_val("packed");
                         emit(curr_fn, fsig, "call", call_args, {packed_result});
-                        unpack_values(curr_fn, packed_result, vals2str(id->outputs));
+                        unpack_values(curr_fn, packed_result, vals2str(id.outputs));
                     }
-                }
+                               },
+                               // todo: we should probably stop codegen of curr_fn after hitting return because everything that follows is dead code,
+                               [ & ](lin::ret_data &r) {
+                                   // what to do with functions that don't "return" anything ?
+                                   if (r.arg)
+                                       emit(curr_fn, "jsvalue", "move", args2str({r.arg.value()}), {"out"});
+                               },
+                               [ & ](lin::assert_data &ad) {
+                                   emit(curr_fn, "jsvalue", "assert", args2str({ad.arg}), {});
+                               },
+                               [ & ](lin::call_data &c) {
+                                   std::string callee_struct = sema.function_name(c.callee);
+                                   std::string f_ref = fresh_val("f_ref");
+                                   emit(curr_fn, callee_struct, "run", {}, {f_ref});
 
-                // todo: we should probably stop codegen of curr_fn after hitting return because everything that follows is dead code,
-                else if (auto *r = std::get_if<lin::ret_data>(&i.data)) {
-                    // what to do with functions that don't "return" anything ?
-                    if (r->arg)
-                        emit(curr_fn, "jsvalue", "move", args2str({r->arg.value()}), {"out"});
-                } else if (auto *ad = std::get_if<lin::assert_data>(&i.data))
-                    emit(curr_fn, "jsvalue", "assert", args2str({ad->arg}), {});
-                else if (auto *dr = std::get_if<lin::drop_data>(&i.data)) {
-                } else if (auto *c = std::get_if<lin::call_data>(&i.data)) {
-                    std::string callee_struct = sema.function_name(c->callee);
-                    std::string f_ref = fresh_val("f_ref");
-                    emit(curr_fn, callee_struct, "run", {}, {f_ref});
+                                   std::string fsig = call_signature_name(c.args.size());
+                                   std::vector<std::string> call_args{f_ref};
+                                   for (auto &a: args2str(c.args))
+                                       call_args.push_back(std::move(a));
 
-                    std::string fsig = call_signature_name(c->args.size());
-                    std::vector<std::string> call_args{f_ref};
-                    for (auto &a: args2str(c->args))
-                        call_args.push_back(std::move(a));
-
-                    emit(curr_fn, fsig, "call", call_args, vals2str({c->target}));
-                } else if (auto *ld = std::get_if<lin::loop_data>(&i.data)) {
-                    std::vector<std::string> params = vals2str(ld->params);
-                    std::vector<std::string> outs = vals2str(ld->outputs);
+                                   emit(curr_fn, fsig, "call", call_args, vals2str({c.target}));
+                               },
+                               [ & ](lin::loop_data &ld) {
+                    std::vector<std::string> params = vals2str(ld.params);
+                    std::vector<std::string> outs = vals2str(ld.outputs);
                     std::string fsig = call_signature_name(params.size());
 
                     std::string loop_name = fresh_val("loop");
@@ -347,14 +345,14 @@ namespace qthu::js2ct::cthu {
                     {
                         std::string self_ref = fresh_val("self");
                         std::vector rec_args{self_ref};
-                        for (auto &p: vals2str(ld->next_params))
+                        for (auto &p: vals2str(ld.next_params))
                             rec_args.push_back(p);
 
                         std::vector<insn> extra;
                         extra.push_back(insn{struct_name, loop_name, {}, {self_ref}});
                         extra.push_back(insn{fsig, "call", rec_args, {"packed"}});
 
-                        lower_fn(cont_name, ld->body, extra);
+                        lower_fn(cont_name, ld.body, extra);
                         curr_struct->functions[cont_name].in = params;
                         curr_struct->functions[cont_name].out = {"packed"};
                     }
@@ -395,7 +393,7 @@ namespace qthu::js2ct::cthu {
                         std::string alt1 = fresh_val("alt"), alt2 = fresh_val("alt"), joined = fresh_val("cont");
 
                         std::vector<insn> extra;
-                        extra.push_back(insn{"jsvalue", "dup", args2str({ld->cond}), {cmp1, cmp2}});
+                        extra.push_back(insn{"jsvalue", "dup", args2str({ld.cond}), {cmp1, cmp2}});
                         extra.push_back(insn{"jsvalue", "not", {cmp2}, {cmp3}});
                         extra.push_back(insn{struct_name, cont_name, {}, {cont_ref}});
                         extra.push_back(insn{struct_name, exit_name, {}, {exit_ref}});
@@ -408,11 +406,11 @@ namespace qthu::js2ct::cthu {
                         // ran, right above) may have already consumed some of
                         // loop_name's own declared "in" names via dup.
                         std::vector call_args{joined};
-                        for (auto &p: vals2str(ld->dispatch_args))
+                        for (auto &p: vals2str(ld.dispatch_args))
                             call_args.push_back(p);
                         extra.push_back(insn{fsig, "call", call_args, {"packed"}});
 
-                        lower_fn(loop_name, ld->cond_body, extra);
+                        lower_fn(loop_name, ld.cond_body, extra);
                         curr_struct->functions[loop_name].in = params;
                         curr_struct->functions[loop_name].out = {"packed"};
                     }
@@ -428,10 +426,18 @@ namespace qthu::js2ct::cthu {
                     std::string packed_result = fresh_val("packed");
                     emit(curr_fn, fsig, "call", outer_call_args, {packed_result});
                     unpack_values(curr_fn, packed_result, outs);
-                } else if (std::get_if<lin::brk_data>(&i.data)) {
-                } else if (std::get_if<lin::cont_data>(&i.data)) {
-                } else
-                    assert(false && "unimplemented");
+                               },
+                               // Not currently reachable from the real pipeline: hir2linear.hpp's
+                               // lower_stmt now rejects break/continue with a clear error before
+                               // ever producing one of these (break/continue codegen itself
+                               // remains genuinely unimplemented feature work, Claude.md). Kept
+                               // as harmless no-ops rather than removed, since lin::instr's own
+                               // variant still declares them.
+                               [ & ](lin::brk_data &) {
+                               },
+                               [ & ](lin::cont_data &) {
+                               },
+                           }, i.data);
             }
 
             for (auto &e: extra)

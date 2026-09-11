@@ -9,7 +9,7 @@
 #
 # Covers:
 #   test/js2ct/lexer/good/*.js   -- must parse successfully
-#   test/js2ct/lexer/bad_*.js    -- must fail to lex/parse, cleanly
+#   test/js2ct/lexer/bad/*.js    -- must fail to lex/parse, cleanly
 #   test/js2ct/parser/good/*.js  -- must parse successfully
 #   test/js2ct/parser/bad/*.js   -- must fail to parse, cleanly
 #
@@ -121,8 +121,8 @@ for f in "$REPO_ROOT"/test/js2ct/lexer/good/*.js; do
     check_fixture "$f" good
 done
 
-echo "== lexer (bad_*.js) =="
-for f in "$REPO_ROOT"/test/js2ct/lexer/bad_*.js; do
+echo "== lexer/bad =="
+for f in "$REPO_ROOT"/test/js2ct/lexer/bad/*.js; do
     check_fixture "$f" bad
 done
 

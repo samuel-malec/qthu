@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "../../common/visit.hpp"
 #include "../frontend/ast.hpp"
 
 namespace qthu::js2ct::sema {
@@ -254,165 +255,205 @@ namespace qthu::js2ct::sema {
         }
 
         void declare_stmt(ast::stmt &s, scope_id curr_scope) {
-            if (auto *b = std::get_if<ast::block>(&s.data)) {
-                scope_id new_scope = declare_scope(scope::kind::block, curr_scope);
-                get_scope(new_scope).enclosing_function = get_scope(curr_scope).enclosing_function;
-                result.stmt_scopes[&s] = new_scope;
-                declare_block(*b, new_scope);
-            } else if (auto *vd = std::get_if<ast::var_declaration>(&s.data)) {
-                declare_var(*vd, curr_scope);
-            } else if (auto *fd = std::get_if<ast::fn_declaration>(&s.data)) {
-                // "main" is reserved: the top-level script itself always
-                // compiles to `structure main` (linear2cthu.hpp's lowerer,
-                // matching cthuc's hardcoded find_main_id() lookup for
-                // `structure main :: run`) -- a JS function also named `main`
-                // would collide with it (two `structure main` blocks in the
-                // emitted .ct, which cthuc's reader rejects as "main already
-                // defined", a confusing error that doesn't point at the real
-                // cause). Reject it here instead, with a clear explanation.
-                if (fd->name == "main")
-                    error(s.loc, "'main' is a reserved function name -- the top-level script itself "
-                          "compiles to the structure named 'main', so a function can't be named "
-                          "that too. Please rename this function.");
+            std::visit(overloaded{
+                           [ & ](ast::block &b) {
+                               scope_id new_scope = declare_scope(scope::kind::block, curr_scope);
+                               get_scope(new_scope).enclosing_function = get_scope(curr_scope).enclosing_function;
+                               result.stmt_scopes[&s] = new_scope;
+                               declare_block(b, new_scope);
+                           },
+                           [ & ](ast::var_declaration &vd) {
+                               declare_var(vd, curr_scope);
+                           },
+                           [ & ](ast::fn_declaration &fd) {
+                               // "main" is reserved: the top-level script itself always
+                               // compiles to `structure main` (linear2cthu.hpp's lowerer,
+                               // matching cthuc's hardcoded find_main_id() lookup for
+                               // `structure main :: run`) -- a JS function also named `main`
+                               // would collide with it (two `structure main` blocks in the
+                               // emitted .ct, which cthuc's reader rejects as "main already
+                               // defined", a confusing error that doesn't point at the real
+                               // cause). Reject it here instead, with a clear explanation.
+                               if (fd.name == "main")
+                                   error(s.loc, "'main' is a reserved function name -- the top-level script itself "
+                                         "compiles to the structure named 'main', so a function can't be named "
+                                         "that too. Please rename this function.");
 
-                scope_id fn_scope = declare_scope(scope::kind::function, curr_scope);
-                function_id fid{.value = static_cast<uint32_t>(result.functions.size())};
-                result.stmt_scopes[&s] = fn_scope;
-                result.stmt_functions[&s] = fid;
+                               scope_id fn_scope = declare_scope(scope::kind::function, curr_scope);
+                               function_id fid{.value = static_cast<uint32_t>(result.functions.size())};
+                               result.stmt_scopes[&s] = fn_scope;
+                               result.stmt_functions[&s] = fid;
 
-                function f{.id = fid, .scope = fn_scope, .arity = fd->params.size()};
-                result.functions.push_back(f);
+                               function f{.id = fid, .scope = fn_scope, .arity = fd.params.size()};
+                               result.functions.push_back(f);
 
-                get_scope(fn_scope).enclosing_function = fid;
+                               get_scope(fn_scope).enclosing_function = fid;
 
-                name_id nid = intern(fd->name);
-                symbol_id sid = add_symbol(symbol::kind_t::function, nid, curr_scope, {}, fid);
-                get_scope(curr_scope).add(nid, sid, result.names);
+                               name_id nid = intern(fd.name);
+                               symbol_id sid = add_symbol(symbol::kind_t::function, nid, curr_scope, {}, fid);
+                               get_scope(curr_scope).add(nid, sid, result.names);
 
-                for (auto &param: fd->params)
-                    add_param_binding(param, fn_scope);
+                               for (auto &param: fd.params)
+                                   add_param_binding(param, fn_scope);
 
-                declare_block(fd->body, fn_scope);
-            } else if (auto *i = std::get_if<ast::if_stmt>(&s.data)) {
-                declare_stmt(*i->then_branch, curr_scope);
-                if (i->else_branch)
-                    declare_stmt(*i->else_branch, curr_scope);
-            } else if (auto *fl = std::get_if<ast::for_stmt>(&s.data)) {
-                scope_id loop_scope = declare_scope(scope::kind::loop, curr_scope);
-                result.stmt_scopes[&s] = loop_scope;
-                if (fl->init)
-                    declare_stmt(*fl->init, loop_scope);
-                declare_stmt(*fl->body, loop_scope);
-            } else if (auto *w = std::get_if<ast::while_stmt>(&s.data)) {
-                scope_id loop_scope = declare_scope(scope::kind::loop, curr_scope);
-                result.stmt_scopes[&s] = loop_scope;
-                declare_stmt(*w->body, loop_scope);
-            } else if (auto *dw = std::get_if<ast::do_while_stmt>(&s.data)) {
-                scope_id loop_scope = declare_scope(scope::kind::loop, curr_scope);
-                result.stmt_scopes[&s] = loop_scope;
-                declare_stmt(*dw->body, loop_scope);
-            }
+                               declare_block(fd.body, fn_scope);
+                           },
+                           [ & ](ast::ret &) {
+                               // Nothing to declare -- a return statement can't
+                               // introduce a new scope, function, or binding.
+                           },
+                           [ & ](ast::if_stmt &i) {
+                               declare_stmt(*i.then_branch, curr_scope);
+                               if (i.else_branch)
+                                   declare_stmt(*i.else_branch, curr_scope);
+                           },
+                           [ & ](ast::do_while_stmt &dw) {
+                               scope_id loop_scope = declare_scope(scope::kind::loop, curr_scope);
+                               result.stmt_scopes[&s] = loop_scope;
+                               declare_stmt(*dw.body, loop_scope);
+                           },
+                           [ & ](ast::while_stmt &w) {
+                               scope_id loop_scope = declare_scope(scope::kind::loop, curr_scope);
+                               result.stmt_scopes[&s] = loop_scope;
+                               declare_stmt(*w.body, loop_scope);
+                           },
+                           [ & ](ast::for_stmt &fl) {
+                               scope_id loop_scope = declare_scope(scope::kind::loop, curr_scope);
+                               result.stmt_scopes[&s] = loop_scope;
+                               if (fl.init)
+                                   declare_stmt(*fl.init, loop_scope);
+                               declare_stmt(*fl.body, loop_scope);
+                           },
+                           [ & ](ast::expr_stmt &) {
+                               // Nothing to declare -- JS doesn't allow a
+                               // function/var declaration in expression position.
+                           },
+                           [ & ](ast::brk &) {
+                               // Nothing to declare.
+                           },
+                           [ & ](ast::cont &) {
+                               // Nothing to declare.
+                           },
+                       }, s.data);
         }
 
         void resolve_expr(ast::expr &e, scope_id curr_scope) {
-            if (auto *id = std::get_if<ast::var>(&e.data)) {
-                auto sid = lookup(curr_scope, id->name);
-                if (!sid)
-                    error(e.loc, "undeclared identified '", id->name, "'");
+            std::visit(overloaded{
+                           [ & ](ast::int_lit &) {
+                               // Nothing to resolve -- no identifiers in a literal.
+                           },
+                           [ & ](ast::bool_lit &) {
+                               // Nothing to resolve.
+                           },
+                           [ & ](ast::str_lit &) {
+                               // Nothing to resolve.
+                           },
+                           [ & ](ast::var &id) {
+                               auto sid = lookup(curr_scope, id.name);
+                               if (!sid)
+                                   error(e.loc, "undeclared identified '", id.name, "'");
 
-                result.identifier_bindings[&e] = get_symbol(sid.value()).binding.value();
-            } else if (auto *u = std::get_if<ast::unary>(&e.data)) {
-                resolve_expr(*u->sub, curr_scope);
-            } else if (auto *b = std::get_if<ast::binary>(&e.data)) {
-                resolve_expr(*b->left, curr_scope);
-                resolve_expr(*b->right, curr_scope);
-            } else if (auto *a = std::get_if<ast::assign>(&e.data)) {
-                resolve_expr(*a->value, curr_scope);
+                               result.identifier_bindings[&e] = get_symbol(sid.value()).binding.value();
+                           },
+                           [ & ](ast::unary &u) {
+                               resolve_expr(*u.sub, curr_scope);
+                           },
+                           [ & ](ast::binary &b) {
+                               resolve_expr(*b.left, curr_scope);
+                               resolve_expr(*b.right, curr_scope);
+                           },
+                           [ & ](ast::assign &a) {
+                               resolve_expr(*a.value, curr_scope);
 
-                if (auto *v = std::get_if<ast::var>(&a->target)) {
-                    auto sid = lookup(curr_scope, v->name);
-                    if (!sid)
-                        error(e.loc, "unknown identifier '", v->name, "'");
+                               if (auto *v = std::get_if<ast::var>(&a.target)) {
+                                   auto sid = lookup(curr_scope, v->name);
+                                   if (!sid)
+                                       error(e.loc, "unknown identifier '", v->name, "'");
 
-                    auto &sym = get_symbol(sid.value());
-                    if (sym.kind != symbol::kind_t::variable)
-                        error(e.loc, "invalid target of an assignment");
+                                   auto &sym = get_symbol(sid.value());
+                                   if (sym.kind != symbol::kind_t::variable)
+                                       error(e.loc, "invalid target of an assignment");
 
-                    result.assign_bindings[&e] = sym.binding.value();
+                                   result.assign_bindings[&e] = sym.binding.value();
 
-                    auto &bi = get_binding(sym.binding.value());
-                    if (bi.kind == ast::var_declaration::kind_t::constant)
-                        error(e.loc, "can't assign to a const-qualified variable");
-                } else {
-                    auto &m = std::get<ast::member>(a->target);
-                    // Single-level only (the parser already enforces this): the
-                    // member's own object must be a plain identifier, not
-                    // another member expression.
-                    auto &obj_var = std::get<ast::var>(m.object->data);
+                                   auto &bi = get_binding(sym.binding.value());
+                                   if (bi.kind == ast::var_declaration::kind_t::constant)
+                                       error(e.loc, "can't assign to a const-qualified variable");
+                               } else {
+                                   auto &m = std::get<ast::member>(a.target);
+                                   // Single-level only (the parser already enforces this): the
+                                   // member's own object must be a plain identifier, not
+                                   // another member expression.
+                                   auto &obj_var = std::get<ast::var>(m.object->data);
 
-                    auto sid = lookup(curr_scope, obj_var.name);
-                    if (!sid)
-                        error(e.loc, "unknown identifier '", obj_var.name, "'");
+                                   auto sid = lookup(curr_scope, obj_var.name);
+                                   if (!sid)
+                                       error(e.loc, "unknown identifier '", obj_var.name, "'");
 
-                    auto &sym = get_symbol(sid.value());
-                    if (sym.kind != symbol::kind_t::variable)
-                        error(e.loc, "invalid target of an assignment");
+                                   auto &sym = get_symbol(sid.value());
+                                   if (sym.kind != symbol::kind_t::variable)
+                                       error(e.loc, "invalid target of an assignment");
 
-                    // Not const-checked: JS allows `const o = {}; o.x = 1;` --
-                    // const only forbids rebinding `o` itself, not mutating
-                    // what it points to.
-                    result.assign_bindings[&e] = sym.binding.value();
+                                   // Not const-checked: JS allows `const o = {}; o.x = 1;` --
+                                   // const only forbids rebinding `o` itself, not mutating
+                                   // what it points to.
+                                   result.assign_bindings[&e] = sym.binding.value();
 
-                    resolve_expr(*m.key, curr_scope);
-                }
-            } else if (auto *c = std::get_if<ast::call>(&e.data)) {
-                ast::expr *callee_ptr = c->callee.get();
-                if (!std::holds_alternative<ast::var>(callee_ptr->data))
-                    error(e.loc, "expected an identifier");
+                                   resolve_expr(*m.key, curr_scope);
+                               }
+                           },
+                           [ & ](ast::call &c) {
+                               ast::expr *callee_ptr = c.callee.get();
+                               if (!std::holds_alternative<ast::var>(callee_ptr->data))
+                                   error(e.loc, "expected an identifier");
 
-                auto &calle_name = std::get<ast::var>(callee_ptr->data);
+                               auto &calle_name = std::get<ast::var>(callee_ptr->data);
 
-                // assert(...) is a magic, never-declared compiler builtin
-                // (ast2hir.hpp recognizes it syntactically in statement
-                // position and lowers it to hir::stmt::assert_stmt instead
-                // of a real call) -- skip the "must be a declared function"
-                // check for this one name; just resolve its argument.
-                if (calle_name.name == "assert") {
-                    if (c->args.size() != 1)
-                        error(e.loc, "assert() takes exactly one argument");
-                    resolve_expr(*c->args[0], curr_scope);
-                    return;
-                }
+                               // assert(...) is a magic, never-declared compiler builtin
+                               // (ast2hir.hpp recognizes it syntactically in statement
+                               // position and lowers it to hir::stmt::assert_stmt instead
+                               // of a real call) -- skip the "must be a declared function"
+                               // check for this one name; just resolve its argument.
+                               if (calle_name.name == "assert") {
+                                   if (c.args.size() != 1)
+                                       error(e.loc, "assert() takes exactly one argument");
+                                   resolve_expr(*c.args[0], curr_scope);
+                                   return;
+                               }
 
-                auto sid = lookup(curr_scope, calle_name.name);
-                if (!sid)
-                    error(e.loc, "undecared identifier");
+                               auto sid = lookup(curr_scope, calle_name.name);
+                               if (!sid)
+                                   error(e.loc, "undecared identifier");
 
-                auto &sym = get_symbol(sid.value());
-                if (sym.kind != symbol::kind_t::function)
-                    error(e.loc, "expected a function");
+                               auto &sym = get_symbol(sid.value());
+                               if (sym.kind != symbol::kind_t::function)
+                                   error(e.loc, "expected a function");
 
-                function_id fid = sym.function.value();
-                result.direct_calls[&e] = fid;
-                auto &f = get_function(fid);
+                               function_id fid = sym.function.value();
+                               result.direct_calls[&e] = fid;
+                               auto &f = get_function(fid);
 
-                // TODO: javascript allows calling functions with less arguments than described by the
-                // function signature, we will have to work out way through it
-                if (c->args.size() != f.arity)
-                    error(e.loc, "call arity doesn't match");
+                               // TODO: javascript allows calling functions with less arguments than described by the
+                               // function signature, we will have to work out way through it
+                               if (c.args.size() != f.arity)
+                                   error(e.loc, "call arity doesn't match");
 
-                for (auto &arg: c->args)
-                    resolve_expr(*arg, curr_scope);
-            } else if (auto *m = std::get_if<ast::member>(&e.data)) {
-                resolve_expr(*m->object, curr_scope);
-                resolve_expr(*m->key, curr_scope);
-            } else if (auto *ol = std::get_if<ast::object_lit>(&e.data)) {
-                for (auto &[key, val]: ol->props)
-                    resolve_expr(*val, curr_scope);
-            } else if (auto *al = std::get_if<ast::array_lit>(&e.data)) {
-                for (auto &elem: al->elements)
-                    resolve_expr(*elem, curr_scope);
-            }
+                               for (auto &arg: c.args)
+                                   resolve_expr(*arg, curr_scope);
+                           },
+                           [ & ](ast::member &m) {
+                               resolve_expr(*m.object, curr_scope);
+                               resolve_expr(*m.key, curr_scope);
+                           },
+                           [ & ](ast::object_lit &ol) {
+                               for (auto &[key, val]: ol.props)
+                                   resolve_expr(*val, curr_scope);
+                           },
+                           [ & ](ast::array_lit &al) {
+                               for (auto &elem: al.elements)
+                                   resolve_expr(*elem, curr_scope);
+                           },
+                       }, e.data);
         }
 
         void resolve_block(ast::block &b, scope_id block_scope) {
@@ -421,64 +462,76 @@ namespace qthu::js2ct::sema {
         }
 
         void resolve_stmt(ast::stmt &s, scope_id curr_scope) {
-            if (auto *b = std::get_if<ast::block>(&s.data)) {
-                scope_id &block_scope = result.stmt_scopes.at(&s);
-                resolve_block(*b, block_scope);
-            } else if (auto *vd = std::get_if<ast::var_declaration>(&s.data)) {
-                for (auto &decl: vd->declarators) {
-                    auto sid = lookup(curr_scope, decl.name);
-                    assert(sid);
+            std::visit(overloaded{
+                           [ & ](ast::block &b) {
+                               scope_id &block_scope = result.stmt_scopes.at(&s);
+                               resolve_block(b, block_scope);
+                           },
+                           [ & ](ast::var_declaration &vd) {
+                               for (auto &decl: vd.declarators) {
+                                   auto sid = lookup(curr_scope, decl.name);
+                                   assert(sid);
 
-                    auto &sym = get_symbol(sid.value());
-                    auto &bi = get_binding(sym.binding.value());
-                    if (bi.kind == ast::var_declaration::kind_t::constant && !decl.init)
-                        error(s.loc, "const declaration requires an initializer");
+                                   auto &sym = get_symbol(sid.value());
+                                   auto &bi = get_binding(sym.binding.value());
+                                   if (bi.kind == ast::var_declaration::kind_t::constant && !decl.init)
+                                       error(s.loc, "const declaration requires an initializer");
 
-                    if (decl.init.has_value()) {
-                        resolve_expr(*decl.init, curr_scope);
-                        bi.initialized = true;
-                        get_binding(*sym.binding).initialized = true;
-                    }
-                }
-            } else if (auto *fd = std::get_if<ast::fn_declaration>(&s.data)) {
-                scope_id &fn_scope = result.stmt_scopes.at(&s);
-                resolve_block(fd->body, fn_scope);
-            } else if (auto *r = std::get_if<ast::ret>(&s.data)) {
-                if (!get_scope(curr_scope).enclosing_function)
-                    error(s.loc, "return statement outside of a function");
-                if (r->value)
-                    resolve_expr(*r->value, curr_scope);
-            } else if (auto *i = std::get_if<ast::if_stmt>(&s.data)) {
-                resolve_expr(i->cond, curr_scope);
-                resolve_stmt(*i->then_branch, curr_scope);
-                if (i->else_branch)
-                    resolve_stmt(*i->else_branch, curr_scope);
-            } else if (auto *fl = std::get_if<ast::for_stmt>(&s.data)) {
-                scope_id &loop_scope = result.stmt_scopes.at(&s);
-                if (fl->init)
-                    resolve_stmt(*fl->init, loop_scope);
-                if (fl->cond)
-                    resolve_expr(*fl->cond, loop_scope);
-                if (fl->update)
-                    resolve_expr(*fl->update, loop_scope);
-                resolve_stmt(*fl->body, loop_scope);
-            } else if (auto *w = std::get_if<ast::while_stmt>(&s.data)) {
-                scope_id &loop_scope = result.stmt_scopes.at(&s);
-                resolve_expr(w->cond, loop_scope);
-                resolve_stmt(*w->body, loop_scope);
-            } else if (auto *dw = std::get_if<ast::do_while_stmt>(&s.data)) {
-                scope_id &loop_scope = result.stmt_scopes.at(&s);
-                resolve_expr(dw->cond, loop_scope);
-                resolve_stmt(*dw->body, loop_scope);
-            } else if (auto *e = std::get_if<ast::expr_stmt>(&s.data)) {
-                resolve_expr(e->value, curr_scope);
-            } else if (std::get_if<ast::brk>(&s.data)) {
-                if (!is_in_loop(curr_scope))
-                    error(s.loc, "'break' statement not within a loop");
-            } else if (std::get_if<ast::cont>(&s.data)) {
-                if (!is_in_loop(curr_scope))
-                    error(s.loc, "'continue' statement not within a statemnt");
-            }
+                                   if (decl.init.has_value()) {
+                                       resolve_expr(*decl.init, curr_scope);
+                                       bi.initialized = true;
+                                       get_binding(*sym.binding).initialized = true;
+                                   }
+                               }
+                           },
+                           [ & ](ast::fn_declaration &fd) {
+                               scope_id &fn_scope = result.stmt_scopes.at(&s);
+                               resolve_block(fd.body, fn_scope);
+                           },
+                           [ & ](ast::ret &r) {
+                               if (!get_scope(curr_scope).enclosing_function)
+                                   error(s.loc, "return statement outside of a function");
+                               if (r.value)
+                                   resolve_expr(*r.value, curr_scope);
+                           },
+                           [ & ](ast::if_stmt &i) {
+                               resolve_expr(i.cond, curr_scope);
+                               resolve_stmt(*i.then_branch, curr_scope);
+                               if (i.else_branch)
+                                   resolve_stmt(*i.else_branch, curr_scope);
+                           },
+                           [ & ](ast::do_while_stmt &dw) {
+                               scope_id &loop_scope = result.stmt_scopes.at(&s);
+                               resolve_expr(dw.cond, loop_scope);
+                               resolve_stmt(*dw.body, loop_scope);
+                           },
+                           [ & ](ast::while_stmt &w) {
+                               scope_id &loop_scope = result.stmt_scopes.at(&s);
+                               resolve_expr(w.cond, loop_scope);
+                               resolve_stmt(*w.body, loop_scope);
+                           },
+                           [ & ](ast::for_stmt &fl) {
+                               scope_id &loop_scope = result.stmt_scopes.at(&s);
+                               if (fl.init)
+                                   resolve_stmt(*fl.init, loop_scope);
+                               if (fl.cond)
+                                   resolve_expr(*fl.cond, loop_scope);
+                               if (fl.update)
+                                   resolve_expr(*fl.update, loop_scope);
+                               resolve_stmt(*fl.body, loop_scope);
+                           },
+                           [ & ](ast::expr_stmt &e) {
+                               resolve_expr(e.value, curr_scope);
+                           },
+                           [ & ](ast::brk &) {
+                               if (!is_in_loop(curr_scope))
+                                   error(s.loc, "'break' statement not within a loop");
+                           },
+                           [ & ](ast::cont &) {
+                               if (!is_in_loop(curr_scope))
+                                   error(s.loc, "'continue' statement not within a statemnt");
+                           },
+                       }, s.data);
         }
 
         analysis_result run(ast::program &ast) {

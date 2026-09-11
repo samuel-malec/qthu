@@ -161,7 +161,6 @@ namespace qthu::js2ct::ast {
         std::variant<
             block,
             var_declaration,
-            var_declarator,
             fn_declaration,
             ret,
             if_stmt,
