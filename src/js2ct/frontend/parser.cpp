@@ -207,7 +207,7 @@ namespace qthu::js2ct {
     }
 
     std::optional<ast::expr> parser::parse_unary() {
-        if (auto t = match_any(cat::punct, "!", "-", "+")) {
+        if (auto t = match_any(cat::punct, "!", "-", "+", "~")) {
             fetch();
             auto rhs = parse_unary();
             if (!rhs)
@@ -319,8 +319,59 @@ namespace qthu::js2ct {
         return e;
     }
 
-    std::optional<ast::expr> parser::parse_and() {
+    std::optional<ast::expr> parser::parse_band() {
         auto e = parse_equality();
+        if (!e)
+            return {};
+
+        while (auto t = match_any(cat::punct, "&")) {
+            fetch();
+            auto rhs = parse_equality();
+            if (!rhs)
+                error("Expected rhs for bitwise-and expression");
+
+            e = make_binary(std::move(e.value()), op_kind_from_str(t->data), std::move(rhs.value()));
+        }
+
+        return e;
+    }
+
+    std::optional<ast::expr> parser::parse_bxor() {
+        auto e = parse_band();
+        if (!e)
+            return {};
+
+        while (auto t = match_any(cat::punct, "^")) {
+            fetch();
+            auto rhs = parse_band();
+            if (!rhs)
+                error("Expected rhs for bitwise-xor expression");
+
+            e = make_binary(std::move(e.value()), op_kind_from_str(t->data), std::move(rhs.value()));
+        }
+
+        return e;
+    }
+
+    std::optional<ast::expr> parser::parse_bor() {
+        auto e = parse_bxor();
+        if (!e)
+            return {};
+
+        while (auto t = match_any(cat::punct, "|")) {
+            fetch();
+            auto rhs = parse_bxor();
+            if (!rhs)
+                error("Expected rhs for bitwise-or expression");
+
+            e = make_binary(std::move(e.value()), op_kind_from_str(t->data), std::move(rhs.value()));
+        }
+
+        return e;
+    }
+
+    std::optional<ast::expr> parser::parse_and() {
+        auto e = parse_bor();
         if (!e)
             return {};
 

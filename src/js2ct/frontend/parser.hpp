@@ -66,6 +66,10 @@ namespace qthu::js2ct {
             if (data == "!") return js2ct::NOT;
             if (data == "&&") return js2ct::AND;
             if (data == "||") return js2ct::OR;
+            if (data == "&") return js2ct::BAND;
+            if (data == "|") return js2ct::BOR;
+            if (data == "^") return js2ct::BXOR;
+            if (data == "~") return js2ct::BNOT;
             error("Unknown operator:", data);
             return js2ct::ADD;
         }
@@ -173,6 +177,12 @@ namespace qthu::js2ct {
         std::optional<expr> parse_comparison();
 
         std::optional<expr> parse_equality();
+
+        std::optional<expr> parse_band();
+
+        std::optional<expr> parse_bxor();
+
+        std::optional<expr> parse_bor();
 
         std::optional<expr> parse_assignment();
 

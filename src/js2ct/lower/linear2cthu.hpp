@@ -69,6 +69,10 @@ namespace qthu::js2ct::cthu {
                 case SHL: return "shl";
                 case SHR: return "shr";
                 case NOT: return "not";
+                case BAND: return "band";
+                case BOR: return "bor";
+                case BXOR: return "bxor";
+                case BNOT: return "bnot";
                 case AND:
                 case OR:
                     throw std::runtime_error(

@@ -7,6 +7,8 @@ namespace qthu::js2ct {
         EQ, NEQ, LT, LEQ, GT, GEQ,
 
         NOT, AND, OR,
+
+        BAND, BOR, BXOR, BNOT,
     };
 
     inline std::ostream &operator<<(std::ostream &os, const op_kind op) {
@@ -27,6 +29,10 @@ namespace qthu::js2ct {
             case NOT: return os << "!";
             case AND: return os << "&&";
             case OR: return os << "||";
+            case BAND: return os << "&";
+            case BOR: return os << "|";
+            case BXOR: return os << "^";
+            case BNOT: return os << "~";
         }
 
         return os << "idk";
